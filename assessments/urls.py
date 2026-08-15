@@ -5,6 +5,8 @@ from assessments.views import (
     AssessmentResultListCreateView,
     CourseAssessmentListCreateView,
     ResultDetailView,
+    CourseGradebookView,
+    AssessmentStatisticsView,
 )
 
 urlpatterns = [
@@ -27,5 +29,15 @@ urlpatterns = [
         "results/<int:pk>/",
         ResultDetailView.as_view(),
         name="result-detail",
+    ),
+    path(
+        "courses/<int:course_id>/gradebook/",
+        CourseGradebookView.as_view(),
+        name="course-gradebook",
+    ),
+    path(
+        "assessments/<int:pk>/statistics/",
+        AssessmentStatisticsView.as_view(),
+        name="assessment-statistics",
     ),
 ]

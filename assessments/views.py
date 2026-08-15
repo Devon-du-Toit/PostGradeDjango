@@ -1,9 +1,16 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from decimal import Decimal
 
 from assessments.models import Assessment, Result
 from assessments.serializers import AssessmentSerializer, ResultSerializer
+from assessments.services import (
+    calculate_assessment_statistics,
+    calculate_course_grade,
+)
 from courses.models import Course
 
 
@@ -77,3 +84,91 @@ class ResultDetailView(generics.RetrieveUpdateDestroyAPIView):
         result = self.get_object()
         context["assessment"] = result.assessment
         return context
+
+
+class CourseGradebookView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, course_id):
+        course = get_object_or_404(
+            Course,
+            id=course_id,
+            owner=request.user,
+        )
+
+        enrollments = course.enrollments.select_related(
+            "student"
+        ).all()
+
+        students = []
+
+        for enrollment in enrollments:
+            assessments = course.assessments.all()
+
+            assessment_data = []
+
+            for assessment in assessments:
+                result = enrollment.results.filter(
+                    assessment=assessment
+                ).first()
+
+                assessment_data.append(
+                    {
+                        "assessment": assessment.id,
+                        "name": assessment.name,
+                        "mark": result.mark if result else None,
+                        "max_mark": assessment.max_mark,
+                        "percentage": (
+                            (
+                                    result.mark / assessment.max_mark
+                            ) * Decimal("100.00")
+                            if result
+                            else None
+                        ),
+                        "weight": assessment.weight,
+                    }
+                )
+
+            students.append(
+                {
+                    "enrollment": enrollment.id,
+                    "student": enrollment.student.id,
+                    "student_number": enrollment.student.student_number,
+                    "first_name": enrollment.student.first_name,
+                    "last_name": enrollment.student.last_name,
+                    "assessments": assessment_data,
+                    "course_percentage": calculate_course_grade(
+                        enrollment
+                    ),
+                }
+            )
+
+        return Response(
+            {
+                "course": course.id,
+                "students": students,
+            }
+        )
+
+
+class AssessmentStatisticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        assessment = get_object_or_404(
+            Assessment,
+            pk=pk,
+            course__owner=request.user,
+        )
+
+        statistics = calculate_assessment_statistics(
+            assessment
+        )
+
+        return Response(
+            {
+                "assessment": assessment.id,
+                "name": assessment.name,
+                **statistics,
+            }
+        )
