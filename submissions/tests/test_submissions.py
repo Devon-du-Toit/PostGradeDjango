@@ -2,6 +2,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from accounts.models import User
 from assessments.models import Assessment, Result
@@ -138,7 +139,15 @@ class SubmissionAPITests(TestCase):
 
         self.client.force_authenticate(user=self.user)
 
-    def test_upload_submission(self):
+    @patch(
+        "submissions.serializers.recognize_submission"
+    )
+    def test_upload_submission(
+            self,
+            mock_recognize_submission,
+    ):
+        mock_recognize_submission.return_value = None
+
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
             b"fake pdf content",
@@ -154,17 +163,28 @@ class SubmissionAPITests(TestCase):
             format="multipart",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(Submission.objects.count(), 1)
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+        self.assertEqual(
+            Submission.objects.count(),
+            1,
+        )
 
         submission = Submission.objects.first()
 
-        self.assertEqual(submission.assessment, self.assessment)
+        self.assertEqual(
+            submission.assessment,
+            self.assessment,
+        )
         self.assertEqual(
             submission.original_filename,
             "student-paper.pdf",
         )
-        self.assertIsNone(submission.enrollment)
+        self.assertIsNone(
+            submission.enrollment,
+        )
 
     def test_cannot_upload_to_another_users_assessment(self):
         uploaded_file = SimpleUploadedFile(
@@ -632,4 +652,102 @@ class SubmissionAPITests(TestCase):
         self.assertEqual(
             submission.status,
             Submission.Status.MARKED,
+        )
+
+    @patch(
+        "submissions.serializers.recognize_submission"
+    )
+    def test_upload_automatically_matches_submission(
+        self,
+        mock_recognize_submission,
+    ):
+        student = Student.objects.create(
+            owner=self.user,
+            student_number="12345678",
+            first_name="Test",
+            last_name="Student",
+        )
+
+        enrollment = Enrollment.objects.create(
+            course=self.course,
+            student=student,
+        )
+
+        mock_recognize_submission.return_value = enrollment
+
+        uploaded_file = SimpleUploadedFile(
+            "student-paper.pdf",
+            b"fake pdf content",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/submissions/",
+            {
+                "assessment": self.assessment.id,
+                "file": uploaded_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        submission = Submission.objects.get(
+            id=response.data["id"],
+        )
+
+        self.assertEqual(
+            submission.enrollment,
+            enrollment,
+        )
+
+        self.assertEqual(
+            submission.status,
+            Submission.Status.MATCHED,
+        )
+
+
+    @patch(
+        "submissions.serializers.recognize_submission"
+    )
+    def test_upload_remains_unmatched_when_recognition_fails(
+        self,
+        mock_recognize_submission,
+    ):
+        mock_recognize_submission.return_value = None
+
+        uploaded_file = SimpleUploadedFile(
+            "student-paper.pdf",
+            b"fake pdf content",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/submissions/",
+            {
+                "assessment": self.assessment.id,
+                "file": uploaded_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        submission = Submission.objects.get(
+            id=response.data["id"],
+        )
+
+        self.assertIsNone(
+            submission.enrollment,
+        )
+
+        self.assertEqual(
+            submission.status,
+            Submission.Status.UPLOADED,
         )

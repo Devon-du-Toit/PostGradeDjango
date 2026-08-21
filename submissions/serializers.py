@@ -2,6 +2,9 @@ from rest_framework import serializers
 
 from submissions.models import Submission
 
+from submissions.recognition.service import (
+    recognize_submission,
+)
 
 class SubmissionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -38,7 +41,28 @@ class SubmissionSerializer(serializers.ModelSerializer):
         uploaded_file = validated_data["file"]
         validated_data["original_filename"] = uploaded_file.name
 
-        return super().create(validated_data)
+        submission = super().create(
+            validated_data
+        )
+
+        enrollment = recognize_submission(
+            submission
+        )
+
+        if enrollment is not None:
+            submission.enrollment = enrollment
+            submission.status = (
+                Submission.Status.MATCHED
+            )
+
+            submission.save(
+                update_fields=[
+                    "enrollment",
+                    "status",
+                ]
+            )
+
+        return submission
 
     def update(self, instance, validated_data):
         instance = super().update(instance, validated_data)

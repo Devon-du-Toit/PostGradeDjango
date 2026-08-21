@@ -1,8 +1,10 @@
-from unittest.mock import Mock
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+
+from pathlib import Path
 
 from assessments.models import Assessment
 from courses.models import Course
@@ -63,10 +65,24 @@ class SubmissionRecognitionServiceTests(TestCase):
             original_filename="test.jpg",
         )
 
-    def test_recognizes_enrollment_from_submission(self):
-        provider = Mock()
+    @patch(
+        "submissions.recognition.service."
+        "extract_student_number_candidate"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "find_student_number_text"
+    )
+    def test_recognizes_enrollment_from_submission(
+        self,
+        mock_find_text,
+        mock_extract_candidate,
+    ):
+        mock_find_text.return_value = (
+            "Student number / Studentenommer: 37279432"
+        )
 
-        provider.recognize.return_value = [
+        mock_extract_candidate.return_value = [
             StudentNumberCandidate(
                 value="37279432",
                 confidence=0.95,
@@ -74,8 +90,7 @@ class SubmissionRecognitionServiceTests(TestCase):
         ]
 
         enrollment = recognize_submission(
-            submission=self.submission,
-            provider=provider,
+            self.submission,
         )
 
         self.assertEqual(
@@ -83,10 +98,24 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.enrollment,
         )
 
-    def test_returns_none_when_student_number_is_not_recognized(self):
-        provider = Mock()
+    @patch(
+        "submissions.recognition.service."
+        "extract_student_number_candidate"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "find_student_number_text"
+    )
+    def test_returns_none_when_student_number_is_not_recognized(
+        self,
+        mock_find_text,
+        mock_extract_candidate,
+    ):
+        mock_find_text.return_value = (
+            "Student number / Studentenommer: 99999999"
+        )
 
-        provider.recognize.return_value = [
+        mock_extract_candidate.return_value = [
             StudentNumberCandidate(
                 value="99999999",
                 confidence=0.95,
@@ -94,13 +123,24 @@ class SubmissionRecognitionServiceTests(TestCase):
         ]
 
         enrollment = recognize_submission(
-            submission=self.submission,
-            provider=provider,
+            self.submission,
         )
 
         self.assertIsNone(enrollment)
 
-    def test_does_not_match_student_from_another_course(self):
+    @patch(
+        "submissions.recognition.service."
+        "extract_student_number_candidate"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "find_student_number_text"
+    )
+    def test_does_not_match_student_from_another_course(
+        self,
+        mock_find_text,
+        mock_extract_candidate,
+    ):
         other_course = Course.objects.create(
             owner=self.user,
             code="CMPG212",
@@ -122,9 +162,11 @@ class SubmissionRecognitionServiceTests(TestCase):
             student=other_student,
         )
 
-        provider = Mock()
+        mock_find_text.return_value = (
+            "Student number / Studentenommer: 12345678"
+        )
 
-        provider.recognize.return_value = [
+        mock_extract_candidate.return_value = [
             StudentNumberCandidate(
                 value="12345678",
                 confidence=0.99,
@@ -132,8 +174,64 @@ class SubmissionRecognitionServiceTests(TestCase):
         ]
 
         enrollment = recognize_submission(
-            submission=self.submission,
-            provider=provider,
+            self.submission,
         )
 
         self.assertIsNone(enrollment)
+
+    @patch(
+        "submissions.recognition.service."
+        "find_student_number_text"
+    )
+    def test_returns_none_when_student_number_line_is_not_found(
+        self,
+        mock_find_text,
+    ):
+        mock_find_text.return_value = None
+
+        enrollment = recognize_submission(
+            self.submission,
+        )
+
+        self.assertIsNone(enrollment)
+
+    def test_recognizes_real_full_page_submission_with_ocr_error(self):
+        fixture_path = (
+                Path(__file__).parent
+                / "fixtures"
+                / "student_numbers"
+                / "full"
+                / "student_35226455.jpeg"
+        )
+
+        student = Student.objects.create(
+            owner=self.user,
+            student_number="35226455",
+            first_name="Real",
+            last_name="Student",
+            email="real@example.com",
+        )
+
+        expected_enrollment = Enrollment.objects.create(
+            course=self.course,
+            student=student,
+        )
+
+        submission = Submission.objects.create(
+            assessment=self.assessment,
+            file=SimpleUploadedFile(
+                "student_35226455.jpeg",
+                fixture_path.read_bytes(),
+                content_type="image/jpeg",
+            ),
+            original_filename="student_35226455.jpeg",
+        )
+
+        enrollment = recognize_submission(
+            submission,
+        )
+
+        self.assertEqual(
+            enrollment,
+            expected_enrollment,
+        )

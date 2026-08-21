@@ -1,14 +1,24 @@
+from submissions.recognition.localization import (
+    find_student_number_text,
+)
 from submissions.recognition.matching import (
     find_best_student_number_match,
 )
+from submissions.recognition.paddleocr import (
+    extract_student_number_candidate,
+)
 
 
-def recognize_submission(
-    submission,
-    provider,
-):
-    candidates = provider.recognize(
+def recognize_submission(submission):
+    student_number_text = find_student_number_text(
         submission.file.path,
+    )
+
+    if student_number_text is None:
+        return None
+
+    candidates = extract_student_number_candidate(
+        student_number_text,
     )
 
     enrollments = (
