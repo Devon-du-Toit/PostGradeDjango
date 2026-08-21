@@ -1,3 +1,6 @@
+from submissions.recognition.document import (
+    recognition_image,
+)
 from submissions.recognition.localization import (
     find_student_number_text,
 )
@@ -10,9 +13,14 @@ from submissions.recognition.paddleocr import (
 
 
 def recognize_submission(submission):
-    student_number_text = find_student_number_text(
-        submission.file.path,
-    )
+    with recognition_image(
+        submission.file.path
+    ) as image_path:
+        student_number_text = (
+            find_student_number_text(
+                image_path
+            )
+        )
 
     if student_number_text is None:
         return None

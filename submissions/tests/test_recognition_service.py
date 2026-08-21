@@ -1,3 +1,5 @@
+import pymupdf
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -235,3 +237,56 @@ class SubmissionRecognitionServiceTests(TestCase):
             enrollment,
             expected_enrollment,
         )
+
+    def test_recognizes_student_from_real_pdf_submission(self):
+        fixture_path = (
+                Path(__file__).parent
+                / "fixtures"
+                / "student_numbers"
+                / "full"
+                / "student_37279432_a.jpeg"
+        )
+
+        pdf_path = (
+                Path(__file__).parent
+                / "fixtures"
+                / "student_numbers"
+                / "student_37279432_test.pdf"
+        )
+
+        document = pymupdf.open()
+        page = document.new_page()
+
+        page.insert_image(
+            page.rect,
+            filename=str(fixture_path),
+        )
+
+        document.save(
+            pdf_path,
+        )
+        document.close()
+
+        try:
+            submission = Submission.objects.create(
+                assessment=self.assessment,
+                file=SimpleUploadedFile(
+                    "student_37279432.pdf",
+                    pdf_path.read_bytes(),
+                    content_type="application/pdf",
+                ),
+                original_filename="student_37279432.pdf",
+            )
+
+            enrollment = recognize_submission(
+                submission,
+            )
+
+            self.assertEqual(
+                enrollment,
+                self.enrollment,
+            )
+
+        finally:
+            if pdf_path.exists():
+                pdf_path.unlink()

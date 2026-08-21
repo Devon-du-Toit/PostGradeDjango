@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import serializers
 
 from submissions.models import Submission
@@ -5,6 +7,8 @@ from submissions.models import Submission
 from submissions.recognition.service import (
     recognize_submission,
 )
+
+logger = logging.getLogger(__name__)
 
 class SubmissionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -45,9 +49,16 @@ class SubmissionSerializer(serializers.ModelSerializer):
             validated_data
         )
 
-        enrollment = recognize_submission(
-            submission
-        )
+        try:
+            enrollment = recognize_submission(
+                submission
+            )
+        except Exception:
+            logger.exception(
+                "Automatic submission recognition failed for submission %s",
+                submission.id,
+            )
+            enrollment = None
 
         if enrollment is not None:
             submission.enrollment = enrollment

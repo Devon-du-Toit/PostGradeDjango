@@ -751,3 +751,47 @@ class SubmissionAPITests(TestCase):
             submission.status,
             Submission.Status.UPLOADED,
         )
+
+    @patch(
+        "submissions.serializers.recognize_submission"
+    )
+    def test_upload_succeeds_when_recognition_raises_exception(
+            self,
+            mock_recognize_submission,
+    ):
+        mock_recognize_submission.side_effect = RuntimeError(
+            "OCR failed"
+        )
+
+        uploaded_file = SimpleUploadedFile(
+            "student-paper.pdf",
+            b"fake pdf content",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/submissions/",
+            {
+                "assessment": self.assessment.id,
+                "file": uploaded_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        submission = Submission.objects.get(
+            id=response.data["id"],
+        )
+
+        self.assertIsNone(
+            submission.enrollment,
+        )
+
+        self.assertEqual(
+            submission.status,
+            Submission.Status.UPLOADED,
+        )
