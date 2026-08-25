@@ -4,6 +4,8 @@ from submissions.views import (
     SubmissionDetailView,
     SubmissionListCreateView,
     SubmissionMarkView,
+    SubmissionVerifyView,
+    SubmissionVerificationQueueView,
 )
 
 
@@ -14,6 +16,11 @@ urlpatterns = [
         name="submission-list-create",
     ),
     path(
+        "verification-queue/",
+        SubmissionVerificationQueueView.as_view(),
+        name="submission-verification-queue",
+    ),
+    path(
         "<int:pk>/",
         SubmissionDetailView.as_view(),
         name="submission-detail",
@@ -22,5 +29,10 @@ urlpatterns = [
         "<int:pk>/mark/",
         SubmissionMarkView.as_view(),
         name="submission-mark",
+    ),
+    path(
+        "<int:pk>/verify/",
+        SubmissionVerifyView.as_view(),
+        name="submission-verify",
     ),
 ]

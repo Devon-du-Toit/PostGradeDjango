@@ -361,7 +361,7 @@ class SubmissionAPITests(TestCase):
 
         self.assertIsNone(submission.enrollment)
 
-    def test_can_create_result_from_matched_submission(self):
+    def  test_can_create_result_from_verified_submission(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="11111111",
@@ -383,6 +383,7 @@ class SubmissionAPITests(TestCase):
                 content_type="application/pdf",
             ),
             original_filename="marked.pdf",
+            status=Submission.Status.VERIFIED,
         )
 
         response = self.client.post(
@@ -403,7 +404,7 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(result.mark, 75)
 
-    def test_marking_submission_updates_existing_result(self):
+    def test_marking_verified_submission_updates_existing_result(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="22222222",
@@ -425,6 +426,7 @@ class SubmissionAPITests(TestCase):
                 content_type="application/pdf",
             ),
             original_filename="marked.pdf",
+            status=Submission.Status.VERIFIED,
         )
 
         Result.objects.create(
@@ -483,7 +485,7 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(Result.objects.count(), 0)
 
-    def test_cannot_enter_mark_above_max_mark(self):
+    def test_cannot_enter_mark_above_max_mark_for_verified_submission(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="33333333",
@@ -505,6 +507,7 @@ class SubmissionAPITests(TestCase):
                 content_type="application/pdf",
             ),
             original_filename="marked.pdf",
+            status=Submission.Status.VERIFIED,
         )
 
         response = self.client.post(
@@ -611,7 +614,7 @@ class SubmissionAPITests(TestCase):
             Submission.Status.MATCHED,
         )
 
-    def test_marking_submission_changes_status_to_marked(self):
+    def test_marking_verified_submission_changes_status_to_marked(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="66666666",
@@ -633,7 +636,7 @@ class SubmissionAPITests(TestCase):
                 content_type="application/pdf",
             ),
             original_filename="paper.pdf",
-            status=Submission.Status.MATCHED,
+            status=Submission.Status.VERIFIED,
         )
 
         response = self.client.post(
@@ -713,7 +716,7 @@ class SubmissionAPITests(TestCase):
     @patch(
         "submissions.serializers.recognize_submission"
     )
-    def test_upload_remains_unmatched_when_recognition_fails(
+    def test_upload_needs_verification_when_recognition_fails(
         self,
         mock_recognize_submission,
     ):
@@ -749,7 +752,7 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(
             submission.status,
-            Submission.Status.UPLOADED,
+            Submission.Status.NEEDS_VERIFICATION,
         )
 
     @patch(
@@ -793,5 +796,46 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(
             submission.status,
-            Submission.Status.UPLOADED,
+            Submission.Status.NEEDS_VERIFICATION
+        )
+
+    def test_cannot_mark_matched_but_unverified_submission(self):
+        student = Student.objects.create(
+            owner=self.user,
+            student_number="77777777",
+            first_name="Matched",
+            last_name="Student",
+        )
+
+        enrollment = Enrollment.objects.create(
+            course=self.course,
+            student=student,
+        )
+
+        submission = Submission.objects.create(
+            assessment=self.assessment,
+            enrollment=enrollment,
+            file=SimpleUploadedFile(
+                "paper.pdf",
+                b"fake pdf content",
+                content_type="application/pdf",
+            ),
+            original_filename="paper.pdf",
+            status=Submission.Status.MATCHED,
+        )
+
+        response = self.client.post(
+            f"/api/submissions/{submission.id}/mark/",
+            {"mark": 70},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            Result.objects.count(),
+            0,
         )

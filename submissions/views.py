@@ -7,6 +7,11 @@ from assessments.serializers import ResultSerializer
 from submissions.models import Submission
 from submissions.serializers import SubmissionSerializer
 
+from django.core.exceptions import ValidationError
+
+from students.models import Enrollment
+from submissions.verification import verify_submission
+
 
 class SubmissionListCreateView(generics.ListCreateAPIView):
     serializer_class = SubmissionSerializer
@@ -40,11 +45,11 @@ class SubmissionMarkView(generics.GenericAPIView):
             pk=pk,
         )
 
-        if submission.enrollment is None:
+        if submission.status != Submission.Status.VERIFIED:
             return Response(
                 {
                     "detail": (
-                        "Submission must be matched to a student "
+                        "Submission must be verified "
                         "before entering a mark."
                     )
                 },
@@ -84,3 +89,71 @@ class SubmissionMarkView(generics.GenericAPIView):
                 else status.HTTP_201_CREATED
             ),
         )
+
+
+class SubmissionVerifyView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        enrollment_id = request.data.get("enrollment")
+
+        if enrollment_id is None:
+            return Response(
+                {
+                    "detail": "Enrollment is required."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        enrollment = generics.get_object_or_404(
+            Enrollment.objects.filter(
+                course__owner=request.user,
+            ),
+            pk=enrollment_id,
+        )
+
+        try:
+            verify_submission(
+                submission,
+                enrollment,
+            )
+        except ValidationError as exc:
+            return Response(
+                {
+                    "detail": exc.message,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SubmissionSerializer(
+                submission,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class SubmissionVerificationQueueView(
+    generics.ListAPIView
+):
+    serializer_class = SubmissionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Submission.objects.filter(
+            assessment__course__owner=self.request.user,
+            status__in=[
+                Submission.Status.NEEDS_VERIFICATION,
+                Submission.Status.MATCHED,
+            ],
+        ).order_by("created_at")

@@ -62,16 +62,18 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
         if enrollment is not None:
             submission.enrollment = enrollment
+            submission.status = Submission.Status.MATCHED
+        else:
             submission.status = (
-                Submission.Status.MATCHED
+                Submission.Status.NEEDS_VERIFICATION
             )
 
-            submission.save(
-                update_fields=[
-                    "enrollment",
-                    "status",
-                ]
-            )
+        submission.save(
+            update_fields=[
+                "enrollment",
+                "status",
+            ]
+        )
 
         return submission
 
