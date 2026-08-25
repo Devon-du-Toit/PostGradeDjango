@@ -3,6 +3,7 @@ from django.urls import path
 from students.views import (
     EnrollmentListCreateView,
     StudentDetailView,
+    StudentEmailView,
     StudentListCreateView,
 )
 
@@ -13,5 +14,10 @@ urlpatterns = [
         "enrollments/",
         EnrollmentListCreateView.as_view(),
         name="enrollment-list-create",
+    ),
+    path(
+        "<int:pk>/email/",
+        StudentEmailView.as_view(),
+        name="student-email",
     ),
 ]

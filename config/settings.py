@@ -133,6 +133,8 @@ MAILERS = {
     },
 }
 
+DEFAULT_FROM_EMAIL = "PostGrade <noreply@postgrade.local>"
+
 AUTH_USER_MODEL = "accounts.User"
 
 REST_FRAMEWORK = {

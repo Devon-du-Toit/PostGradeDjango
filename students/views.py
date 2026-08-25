@@ -10,6 +10,58 @@ from students.models import Enrollment, Student
 from students.serializers import EnrollmentSerializer, StudentSerializer
 from django.db import transaction
 
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from students.models import Student
+from submissions.emailing import send_student_email
+
+
+class StudentEmailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        student = get_object_or_404(
+            Student,
+            pk=pk,
+            owner=request.user,
+        )
+
+        subject = request.data.get("subject", "").strip()
+        message = request.data.get("message", "").strip()
+
+        if not subject:
+            return Response(
+                {"detail": "Subject is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not message:
+            return Response(
+                {"detail": "Message is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            send_student_email(
+                student,
+                subject=subject,
+                message=message,
+            )
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {"detail": "Email sent."},
+            status=status.HTTP_200_OK,
+        )
+
 
 class StudentListCreateView(generics.ListCreateAPIView):
     serializer_class = StudentSerializer
