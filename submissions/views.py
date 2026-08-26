@@ -6,6 +6,7 @@ from assessments.models import Result
 from assessments.serializers import ResultSerializer
 from submissions.models import Submission
 from submissions.serializers import SubmissionSerializer
+from submissions.emailing import send_result_email
 
 from django.core.exceptions import ValidationError
 
@@ -80,6 +81,7 @@ class SubmissionMarkView(generics.GenericAPIView):
 
         submission.status = Submission.Status.MARKED
         submission.save(update_fields=["status"])
+        send_result_email(result)
 
         return Response(
             ResultSerializer(result).data,

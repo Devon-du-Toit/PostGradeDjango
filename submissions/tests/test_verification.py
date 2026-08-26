@@ -51,6 +51,7 @@ class VerifySubmissionTests(TestCase):
             student_number="12345678",
             first_name="Test",
             last_name="Student",
+            email="12345678@example.com",
         )
 
         self.enrollment = Enrollment.objects.create(
@@ -150,6 +151,7 @@ class SubmissionVerificationAPITests(TestCase):
             student_number="12345678",
             first_name="Test",
             last_name="Student",
+            email="12345678@example.com"
         )
 
         self.enrollment = Enrollment.objects.create(

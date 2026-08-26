@@ -10,6 +10,8 @@ from courses.models import Course
 from students.models import Enrollment, Student
 from submissions.models import Submission
 
+from django.core import mail
+
 
 class SubmissionModelTests(TestCase):
     def setUp(self):
@@ -31,6 +33,7 @@ class SubmissionModelTests(TestCase):
             student_number="12345678",
             first_name="Test",
             last_name="Student",
+            email="12345678@example.com",
         )
 
         self.enrollment = Enrollment.objects.create(
@@ -367,6 +370,7 @@ class SubmissionAPITests(TestCase):
             student_number="11111111",
             first_name="Marked",
             last_name="Student",
+            email="11111111@example.com"
         )
 
         enrollment = Enrollment.objects.create(
@@ -404,12 +408,32 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(result.mark, 75)
 
+        self.assertEqual(len(mail.outbox), 1)
+
+        email = mail.outbox[0]
+
+        self.assertEqual(
+            email.to,
+            ["11111111@example.com"],
+        )
+
+        self.assertIn(
+            "Test 1",
+            email.subject,
+        )
+
+        self.assertIn(
+            "75",
+            email.body,
+        )
+
     def test_marking_verified_submission_updates_existing_result(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="22222222",
             first_name="Existing",
             last_name="Student",
+            email="22222222@example.com",
         )
 
         enrollment = Enrollment.objects.create(
@@ -620,6 +644,7 @@ class SubmissionAPITests(TestCase):
             student_number="66666666",
             first_name="Marked",
             last_name="Student",
+            email="66666666@example.com",
         )
 
         enrollment = Enrollment.objects.create(
