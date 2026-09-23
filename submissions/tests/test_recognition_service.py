@@ -1,12 +1,10 @@
 import pymupdf
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-
-from pathlib import Path
 
 from assessments.models import Assessment
 from courses.models import Course
@@ -18,7 +16,7 @@ from submissions.recognition.service import (
 from submissions.recognition.types import (
     StudentNumberCandidate,
 )
-
+from submissions.recognition.types import RecognitionResult
 
 class SubmissionRecognitionServiceTests(TestCase):
     def setUp(self):
@@ -67,6 +65,24 @@ class SubmissionRecognitionServiceTests(TestCase):
             original_filename="test.jpg",
         )
 
+        self.quality_patcher = patch(
+            "submissions.recognition.service."
+            "assess_image_quality"
+        )
+
+        self.mock_assess_quality = (
+            self.quality_patcher.start()
+        )
+
+        self.mock_assess_quality.return_value = Mock(
+            usable=True,
+            reason=None,
+        )
+
+        self.addCleanup(
+            self.quality_patcher.stop
+        )
+
     @patch(
         "submissions.recognition.service."
         "extract_student_number_candidate"
@@ -90,14 +106,17 @@ class SubmissionRecognitionServiceTests(TestCase):
                 confidence=0.95,
             )
         ]
-
-        enrollment = recognize_submission(
+        result = recognize_submission(
             self.submission,
         )
 
         self.assertEqual(
-            enrollment,
+            result.enrollment,
             self.enrollment,
+        )
+
+        self.assertIsNone(
+            result.reason
         )
 
     @patch(
@@ -124,11 +143,18 @@ class SubmissionRecognitionServiceTests(TestCase):
             )
         ]
 
-        enrollment = recognize_submission(
+        result = recognize_submission(
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(
+            result.enrollment
+        )
+
+        self.assertEqual(
+            result.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
@@ -175,11 +201,18 @@ class SubmissionRecognitionServiceTests(TestCase):
             )
         ]
 
-        enrollment = recognize_submission(
+        result = recognize_submission(
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(
+            result.enrollment
+        )
+
+        self.assertEqual(
+            result.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
@@ -191,11 +224,18 @@ class SubmissionRecognitionServiceTests(TestCase):
     ):
         mock_find_text.return_value = None
 
-        enrollment = recognize_submission(
+        result = recognize_submission(
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(
+            result.enrollment
+        )
+
+        self.assertEqual(
+            result.reason,
+            "Student number area could not be identified",
+        )
 
     def test_recognizes_real_full_page_submission_with_ocr_error(self):
         fixture_path = (
@@ -229,12 +269,12 @@ class SubmissionRecognitionServiceTests(TestCase):
             original_filename="student_35226455.jpeg",
         )
 
-        enrollment = recognize_submission(
+        result = recognize_submission(
             submission,
         )
 
         self.assertEqual(
-            enrollment,
+            result.enrollment,
             expected_enrollment,
         )
 
@@ -278,15 +318,34 @@ class SubmissionRecognitionServiceTests(TestCase):
                 original_filename="student_37279432.pdf",
             )
 
-            enrollment = recognize_submission(
+            result = recognize_submission(
                 submission,
             )
 
             self.assertEqual(
-                enrollment,
+                result.enrollment,
                 self.enrollment,
             )
 
         finally:
             if pdf_path.exists():
                 pdf_path.unlink()
+
+    def test_stops_recognition_when_image_quality_is_poor(self):
+        self.mock_assess_quality.return_value = Mock(
+            usable=False,
+            reason="Image is too blurry",
+        )
+
+        result = recognize_submission(
+            self.submission
+        )
+
+        self.assertIsNone(
+            result.enrollment
+        )
+
+        self.assertEqual(
+            result.reason,
+            "Image is too blurry",
+        )
