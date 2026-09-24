@@ -2,7 +2,7 @@ import logging
 
 from rest_framework import serializers
 
-from submissions.models import Submission
+from submissions.models import RecognitionAttempt, Submission
 
 from submissions.recognition.service import (
     recognize_submission,
@@ -10,7 +10,30 @@ from submissions.recognition.service import (
 
 logger = logging.getLogger(__name__)
 
+class RecognitionAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RecognitionAttempt
+        fields = [
+            "id",
+            "method",
+            "outcome",
+            "processing_version",
+            "raw_text",
+            "raw_candidate",
+            "suggested_enrollment",
+            "suggested_student_number",
+            "confidence",
+            "confidence_type",
+            "column_ambiguity",
+            "region",
+            "quality_issues",
+            "created_at",
+        ]
+        read_only_fields = fields
+
 class SubmissionSerializer(serializers.ModelSerializer):
+    recognition = serializers.SerializerMethodField()
+    
     class Meta:
         model = Submission
         fields = [
@@ -20,6 +43,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "file",
             "original_filename",
             "status",
+            "recognition",
             "created_at",
             "updated_at",
         ]
@@ -30,6 +54,16 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_recognition(self, submission):
+        attempts = submission.recognition_attempts.all()
+
+        if not attempts:
+            return None
+
+        return RecognitionAttemptSerializer(
+            attempts[0],
+        ).data
 
     def validate_assessment(self, assessment):
         request = self.context["request"]
@@ -126,5 +160,5 @@ class SubmissionSerializer(serializers.ModelSerializer):
                     )
                 }
             )
-
+    
         return attrs
