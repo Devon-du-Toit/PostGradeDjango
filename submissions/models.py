@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models import Q
+from django.utils import timezone
 
 from assessments.models import Assessment
 from students.models import Enrollment
@@ -8,12 +10,11 @@ class Submission(models.Model):
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         MATCHED = "matched", "Matched"
-        NEEDS_VERIFICATION = (
-            "needs_verification",
-            "Needs verification",
-        )
+        NEEDS_VERIFICATION = "needs_verification","Needs verification" #check change
         VERIFIED = "verified", "Verified"
         MARKED = "marked", "Marked"
+        PROCESSING = "processing", "Processing"
+        RECOGNITION_FAILED = "recognition_failed", "Recognition failed"
 
     assessment = models.ForeignKey(
         Assessment,
@@ -162,3 +163,87 @@ class RecognitionAttempt(models.Model):
 
     def __str__(self):
         return f"{self.submission} - {self.method} - {self.outcome}"
+
+class RecognitionJob(models.Model):
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    ACTIVE_STATUSES = [
+        Status.QUEUED,
+        Status.RUNNING,
+    ]
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="recognition_jobs",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+
+    attempts = models.PositiveSmallIntegerField(
+        default=0,
+    )
+
+    max_attempts = models.PositiveSmallIntegerField(
+        default=3,
+    )
+
+    run_after = models.DateTimeField(
+        default=timezone.now,
+    )
+
+    lease_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    last_error = models.TextField(
+        blank=True,
+    )
+
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    finished_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission"],
+                condition=Q(status__in=["queued", "running"]),
+                name="one_active_recognition_job_per_submission",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "run_after"],
+                name="recognition_job_claim_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.submission} - {self.status}"
+
