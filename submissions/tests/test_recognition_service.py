@@ -1,3 +1,7 @@
+from submissions.recognition.types import (
+    StudentNumberCandidate,
+    StudentNumberRegion,
+)
 import pymupdf
 from pathlib import Path
 from unittest.mock import patch
@@ -73,15 +77,19 @@ class SubmissionRecognitionServiceTests(TestCase):
     )
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     def test_recognizes_enrollment_from_submission(
         self,
         mock_find_text,
         mock_extract_candidate,
     ):
-        mock_find_text.return_value = (
-            "Student number / Studentenommer: 37279432"
+        mock_find_text.return_value = StudentNumberRegion(
+            text="Student number / Studentenommer: 37279432",
+            confidence=0.95,
+            box=(0, 0, 10, 10),
+            image_width=100,
+            image_height=100,
         )
 
         mock_extract_candidate.return_value = [
@@ -106,15 +114,19 @@ class SubmissionRecognitionServiceTests(TestCase):
     )
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     def test_returns_none_when_student_number_is_not_recognized(
         self,
         mock_find_text,
         mock_extract_candidate,
     ):
-        mock_find_text.return_value = (
-            "Student number / Studentenommer: 99999999"
+        mock_find_text.return_value = StudentNumberRegion(
+            text="Student number / Studentenommer: 99999999",
+            confidence=0.95,
+            box=(0, 0, 10, 10),
+            image_width=100,
+            image_height=100,
         )
 
         mock_extract_candidate.return_value = [
@@ -136,7 +148,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     )
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     def test_does_not_match_student_from_another_course(
         self,
@@ -164,8 +176,12 @@ class SubmissionRecognitionServiceTests(TestCase):
             student=other_student,
         )
 
-        mock_find_text.return_value = (
-            "Student number / Studentenommer: 12345678"
+        mock_find_text.return_value = StudentNumberRegion(
+            text="Student number / Studentenommer: 12345678",
+            confidence=0.95,
+            box=(0, 0, 10, 10),
+            image_width=100,
+            image_height=100,
         )
 
         mock_extract_candidate.return_value = [
@@ -183,7 +199,7 @@ class SubmissionRecognitionServiceTests(TestCase):
 
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     def test_returns_none_when_student_number_line_is_not_found(
         self,
