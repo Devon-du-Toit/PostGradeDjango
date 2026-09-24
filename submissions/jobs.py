@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -18,6 +19,11 @@ RETRY_DELAYS = [
 ]
 
 MAX_ERROR_LENGTH = 2000
+
+RETRYABLE_STATUSES = [
+    Submission.Status.RECOGNITION_FAILED,
+    Submission.Status.NEEDS_VERIFICATION,
+]
 
 
 def enqueue_recognition(submission):
@@ -234,3 +240,33 @@ def process_next_job():
     run_job(job, job.attempts)
 
     return True
+
+
+def retry_recognition(submission_id):
+    with transaction.atomic():
+        # Lock the submission so two retry clicks cannot both enqueue.
+        submission = Submission.objects.select_for_update().get(
+            pk=submission_id,
+        )
+
+        # Already queued or running: a repeated retry is a no-op.
+        if submission.status == Submission.Status.PROCESSING:
+            return submission
+
+        if submission.status not in RETRYABLE_STATUSES:
+            raise ValidationError(
+                "Only submissions whose recognition failed or needs "
+                "verification can be retried."
+            )
+
+        submission.status = Submission.Status.PROCESSING
+        submission.save(
+            update_fields=[
+                "status",
+                "updated_at",
+            ]
+        )
+
+        enqueue_recognition(submission)
+
+    return submission

@@ -5,6 +5,7 @@ from submissions.views import (
     SubmissionListCreateView,
     SubmissionMarkView,
     SubmissionRecognitionImageView,
+    SubmissionRetryRecognitionView,
     SubmissionVerifyView,
     SubmissionVerificationQueueView,
 )
@@ -40,5 +41,10 @@ urlpatterns = [
         "<int:pk>/recognition-image/",
         SubmissionRecognitionImageView.as_view(),
         name="submission-recognition-image",
+    ),
+    path(
+        "<int:pk>/retry-recognition/",
+        SubmissionRetryRecognitionView.as_view(),
+        name="submission-retry-recognition",
     ),
 ]

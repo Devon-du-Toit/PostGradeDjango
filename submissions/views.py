@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.http import FileResponse, Http404
 
 from students.models import Enrollment
+from submissions.jobs import retry_recognition
 from submissions.verification import verify_submission
 
 
@@ -191,4 +192,38 @@ class SubmissionRecognitionImageView(generics.GenericAPIView):
         return FileResponse(
             attempt.region_image.open("rb"),
             content_type="image/png",
+        )
+
+
+class SubmissionRetryRecognitionView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        try:
+            submission = retry_recognition(
+                submission.pk,
+            )
+        except ValidationError as exc:
+            return Response(
+                {
+                    "detail": exc.message,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SubmissionSerializer(
+                submission,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_202_ACCEPTED,
         )
