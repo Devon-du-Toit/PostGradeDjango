@@ -2,7 +2,10 @@ from django.db import transaction
 from django.urls import reverse
 from rest_framework import serializers
 
-from submissions.jobs import enqueue_recognition
+from submissions.jobs import (
+    cancel_active_jobs,
+    enqueue_recognition,
+)
 from submissions.models import (
     RecognitionAttempt,
     RecognitionJob,
@@ -115,6 +118,17 @@ class SubmissionSerializer(serializers.ModelSerializer):
             attempts[0],
         ).data
         
+    def validate_file(self, file):
+        if (
+            self.instance is not None
+            and self.instance.status == Submission.Status.MARKED
+        ):
+            raise serializers.ValidationError(
+                "The file of a marked submission cannot be replaced."
+            )
+
+        return file
+
     def validate_assessment(self, assessment):
         request = self.context["request"]
 
@@ -139,6 +153,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return submission
 
     def update(self, instance, validated_data):
+        if "file" in validated_data:
+            return self.replace_file(instance, validated_data)
+
         instance = super().update(instance, validated_data)
 
         if instance.enrollment is not None:
@@ -147,6 +164,19 @@ class SubmissionSerializer(serializers.ModelSerializer):
             instance.status = Submission.Status.UPLOADED
 
         instance.save(update_fields=["status"])
+
+        return instance
+
+    def replace_file(self, instance, validated_data):
+        # A new file invalidates any match made from the old one.
+        validated_data["original_filename"] = validated_data["file"].name
+        validated_data["enrollment"] = None
+        validated_data["status"] = Submission.Status.PROCESSING
+
+        with transaction.atomic():
+            cancel_active_jobs(instance)
+            instance = super().update(instance, validated_data)
+            enqueue_recognition(instance)
 
         return instance
 

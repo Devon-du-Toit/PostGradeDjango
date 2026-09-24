@@ -46,6 +46,20 @@ def enqueue_recognition(submission):
         )
 
 
+def cancel_active_jobs(submission):
+    # A running job's worker sees "cancelled" when it finishes and discards its result.
+    now = timezone.now()
+
+    return submission.recognition_jobs.filter(
+        status__in=RecognitionJob.ACTIVE_STATUSES,
+    ).update(
+        status=RecognitionJob.Status.CANCELLED,
+        lease_expires_at=None,
+        finished_at=now,
+        updated_at=now,
+    )
+
+
 def claim_next_job():
     now = timezone.now()
 
