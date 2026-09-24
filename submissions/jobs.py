@@ -146,6 +146,38 @@ def finish_job(job_id, claimed_attempt, enrollment):
         )
 
 
+def retry_or_fail(job, error, delay, now):
+    # Caller must hold the job's row lock.
+    job.last_error = error[:MAX_ERROR_LENGTH]
+    job.lease_expires_at = None
+
+    if job.attempts < job.max_attempts:
+        job.status = RecognitionJob.Status.QUEUED
+        job.run_after = now + delay
+    else:
+        job.status = RecognitionJob.Status.FAILED
+        job.finished_at = now
+
+        Submission.objects.filter(
+            pk=job.submission_id,
+            status=Submission.Status.PROCESSING,
+        ).update(
+            status=Submission.Status.RECOGNITION_FAILED,
+            updated_at=now,
+        )
+
+    job.save(
+        update_fields=[
+            "status",
+            "last_error",
+            "lease_expires_at",
+            "run_after",
+            "finished_at",
+            "updated_at",
+        ]
+    )
+
+
 def fail_job(job_id, claimed_attempt, exc):
     now = timezone.now()
 
@@ -155,40 +187,42 @@ def fail_job(job_id, claimed_attempt, exc):
         if job is None:
             return
 
-        job.last_error = (
-            f"{type(exc).__name__}: {exc}"
-        )[:MAX_ERROR_LENGTH]
-        job.lease_expires_at = None
+        delay = RETRY_DELAYS[
+            min(job.attempts - 1, len(RETRY_DELAYS) - 1)
+        ]
 
-        if job.attempts < job.max_attempts:
-            delay = RETRY_DELAYS[
-                min(job.attempts - 1, len(RETRY_DELAYS) - 1)
-            ]
-
-            job.status = RecognitionJob.Status.QUEUED
-            job.run_after = now + delay
-        else:
-            job.status = RecognitionJob.Status.FAILED
-            job.finished_at = now
-
-            Submission.objects.filter(
-                pk=job.submission_id,
-                status=Submission.Status.PROCESSING,
-            ).update(
-                status=Submission.Status.RECOGNITION_FAILED,
-                updated_at=now,
-            )
-
-        job.save(
-            update_fields=[
-                "status",
-                "last_error",
-                "lease_expires_at",
-                "run_after",
-                "finished_at",
-                "updated_at",
-            ]
+        retry_or_fail(
+            job,
+            f"{type(exc).__name__}: {exc}",
+            delay,
+            now,
         )
+
+
+def recover_expired_jobs():
+    now = timezone.now()
+    recovered = 0
+
+    with transaction.atomic():
+        expired_jobs = (
+            RecognitionJob.objects
+            .select_for_update(skip_locked=True)
+            .filter(
+                status=RecognitionJob.Status.RUNNING,
+                lease_expires_at__lt=now,
+            )
+        )
+
+        for job in expired_jobs:
+            retry_or_fail(
+                job,
+                "Worker stopped before the job finished.",
+                timedelta(0),
+                now,
+            )
+            recovered += 1
+
+    return recovered
 
 
 def process_next_job():
