@@ -24,6 +24,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
+            "recognition_jobs",
         )
 
     def perform_create(self, serializer):
@@ -38,6 +39,7 @@ class SubmissionDetailView(generics.RetrieveUpdateAPIView):
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
+            "recognition_jobs",
         )
 
 class SubmissionMarkView(generics.GenericAPIView):
@@ -165,6 +167,7 @@ class SubmissionVerificationQueueView(
             ],
         ).prefetch_related(
             "recognition_attempts",
+            "recognition_jobs",
         ).order_by("created_at")
 
 class SubmissionRecognitionImageView(generics.GenericAPIView):

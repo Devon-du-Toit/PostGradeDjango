@@ -3,7 +3,13 @@ from django.urls import reverse
 from rest_framework import serializers
 
 from submissions.jobs import enqueue_recognition
-from submissions.models import RecognitionAttempt, Submission
+from submissions.models import (
+    RecognitionAttempt,
+    RecognitionJob,
+    Submission,
+)
+
+
 class RecognitionAttemptSerializer(serializers.ModelSerializer):
     region_image_url = serializers.SerializerMethodField()
     
@@ -37,9 +43,36 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             kwargs={"pk": attempt.submission_id},
         )
 
+
+class RecognitionJobSerializer(serializers.ModelSerializer):
+    failure_reason = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecognitionJob
+        fields = [
+            "id",
+            "status",
+            "attempts",
+            "max_attempts",
+            "run_after",
+            "failure_reason",
+            "created_at",
+            "started_at",
+            "finished_at",
+        ]
+        read_only_fields = fields
+
+    def get_failure_reason(self, job):
+        # Exception type only; the full text may contain server paths.
+        if not job.last_error:
+            return None
+
+        return job.last_error.split(":", 1)[0]
+
+
 class SubmissionSerializer(serializers.ModelSerializer):
     recognition = serializers.SerializerMethodField()
-    
+    recognition_job = serializers.SerializerMethodField()
     class Meta:
         model = Submission
         fields = [
@@ -50,6 +83,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "original_filename",
             "status",
             "recognition",
+            "recognition_job",
             "created_at",
             "updated_at",
         ]
@@ -61,6 +95,16 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def get_recognition_job(self, submission):
+        jobs = submission.recognition_jobs.all()
+
+        if not jobs:
+            return None
+
+        return RecognitionJobSerializer(
+            jobs[0],
+        ).data
+        
     def get_recognition(self, submission):
         attempts = submission.recognition_attempts.all()
 
@@ -70,7 +114,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return RecognitionAttemptSerializer(
             attempts[0],
         ).data
-
+        
     def validate_assessment(self, assessment):
         request = self.context["request"]
 
