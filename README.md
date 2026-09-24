@@ -128,6 +128,16 @@ The Django development server will normally be available at:
 http://127.0.0.1:8000/
 ```
 
+### Run the mail worker
+
+Result emails are sent by a background worker. In a separate terminal, with the same virtual environment active:
+
+```bash
+python manage.py run_mail_worker
+```
+
+Without a running mail worker, marks are saved normally but result emails remain queued. See [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md) for details.
+
 ## API
 
 Authentication endpoints are available under `/api/auth/`.
