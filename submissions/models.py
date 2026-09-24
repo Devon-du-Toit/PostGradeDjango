@@ -10,7 +10,7 @@ class Submission(models.Model):
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         MATCHED = "matched", "Matched"
-        NEEDS_VERIFICATION = "needs_verification","Needs verification" #check change
+        NEEDS_VERIFICATION = "needs_verification","Needs verification"
         VERIFIED = "verified", "Verified"
         MARKED = "marked", "Marked"
         PROCESSING = "processing", "Processing"
