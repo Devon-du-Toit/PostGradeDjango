@@ -1,16 +1,9 @@
-import logging
-
-from rest_framework import serializers
+from django.db import transaction
 from django.urls import reverse
+from rest_framework import serializers
 
+from submissions.jobs import enqueue_recognition
 from submissions.models import RecognitionAttempt, Submission
-
-from submissions.recognition.service import (
-    recognize_submission,
-)
-
-logger = logging.getLogger(__name__)
-
 class RecognitionAttemptSerializer(serializers.ModelSerializer):
     region_image_url = serializers.SerializerMethodField()
     
@@ -91,36 +84,13 @@ class SubmissionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         uploaded_file = validated_data["file"]
         validated_data["original_filename"] = uploaded_file.name
+        validated_data["status"] = Submission.Status.PROCESSING
 
-        submission = super().create(
-            validated_data
-        )
-
-        try:
-            enrollment = recognize_submission(
-                submission
+        with transaction.atomic():
+            submission = super().create(
+                validated_data
             )
-        except Exception:
-            logger.exception(
-                "Automatic submission recognition failed for submission %s",
-                submission.id,
-            )
-            enrollment = None
-
-        if enrollment is not None:
-            submission.enrollment = enrollment
-            submission.status = Submission.Status.MATCHED
-        else:
-            submission.status = (
-                Submission.Status.NEEDS_VERIFICATION
-            )
-
-        submission.save(
-            update_fields=[
-                "enrollment",
-                "status",
-            ]
-        )
+            enqueue_recognition(submission)
 
         return submission
 
