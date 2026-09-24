@@ -7,6 +7,7 @@ from unittest.mock import patch
 from accounts.models import User
 from assessments.models import Assessment, Result
 from courses.models import Course
+from distribution.dispatch import process_next_email
 from students.models import Enrollment, Student
 from submissions.models import Submission
 
@@ -407,6 +408,15 @@ class SubmissionAPITests(TestCase):
         )
 
         self.assertEqual(result.mark, 75)
+
+        # Marking queues the email; the mail worker sends it.
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(
+            response.data["email_delivery"]["status"],
+            "queued",
+        )
+
+        process_next_email()
 
         self.assertEqual(len(mail.outbox), 1)
 
