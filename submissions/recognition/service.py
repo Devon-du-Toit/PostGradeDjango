@@ -1,5 +1,9 @@
+import logging
+
+from django.core.files.base import ContentFile
 from submissions.models import RecognitionAttempt
 from submissions.recognition.document import (
+    crop_image,
     recognition_image,
 )
 from submissions.recognition.localization import (
@@ -13,6 +17,8 @@ from submissions.recognition.paddleocr import (
 )
 
 PROCESSING_VERSION = "ocr-1"
+
+logger = logging.getLogger(__name__)
 
 def recognize_submission(submission):
     attempt = RecognitionAttempt(
@@ -32,11 +38,28 @@ def recognize_submission(submission):
 
     return enrollment
 
+def save_region_image(attempt, image_path, box):
+    try:
+        attempt.region_image.save(
+            f"submission_{attempt.submission_id}.png",
+            ContentFile(crop_image(image_path, box)),
+            save=False,
+        )
+    except Exception:
+        logger.warning(
+            "Could not save recognition region image for submission %s",
+            attempt.submission_id,
+            exc_info=True,
+        )
+
 def run_recognition(submission, attempt):
     with recognition_image(
         submission.file.path
     ) as image_path:
         region = locate_student_number(image_path)
+
+        if region is not None:
+            save_region_image(attempt, image_path, region.box)
     
     if region is None:
         attempt.outcome = RecognitionAttempt.Outcome.REGION_NOT_FOUND

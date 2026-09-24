@@ -1,6 +1,7 @@
 import logging
 
 from rest_framework import serializers
+from django.urls import reverse
 
 from submissions.models import RecognitionAttempt, Submission
 
@@ -11,6 +12,8 @@ from submissions.recognition.service import (
 logger = logging.getLogger(__name__)
 
 class RecognitionAttemptSerializer(serializers.ModelSerializer):
+    region_image_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = RecognitionAttempt
         fields = [
@@ -26,10 +29,20 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             "confidence_type",
             "column_ambiguity",
             "region",
+            "region_image_url",
             "quality_issues",
             "created_at",
         ]
         read_only_fields = fields
+
+    def get_region_image_url(self, attempt):
+        if not attempt.region_image:
+            return None
+
+        return reverse(
+            "submission-recognition-image",
+            kwargs={"pk": attempt.submission_id},
+        )
 
 class SubmissionSerializer(serializers.ModelSerializer):
     recognition = serializers.SerializerMethodField()

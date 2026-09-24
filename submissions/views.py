@@ -9,6 +9,7 @@ from submissions.serializers import SubmissionSerializer
 from submissions.emailing import send_result_email
 
 from django.core.exceptions import ValidationError
+from django.http import FileResponse, Http404
 
 from students.models import Enrollment
 from submissions.verification import verify_submission
@@ -165,3 +166,26 @@ class SubmissionVerificationQueueView(
         ).prefetch_related(
             "recognition_attempts",
         ).order_by("created_at")
+
+class SubmissionRecognitionImageView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        attempt = submission.recognition_attempts.first()
+
+        if attempt is None or not attempt.region_image:
+            raise Http404(
+                "No recognition image for this submission."
+            )
+
+        return FileResponse(
+            attempt.region_image.open("rb"),
+            content_type="image/png",
+        )
