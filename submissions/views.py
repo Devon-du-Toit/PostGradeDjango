@@ -28,7 +28,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save()
 
-class SubmissionDetailView(generics.RetrieveUpdateAPIView):
+class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
 

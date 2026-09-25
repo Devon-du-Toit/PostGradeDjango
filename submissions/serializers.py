@@ -65,12 +65,22 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return path
 
     def validate_file(self, value):
+        # The uploaded file is create-only. If the wrong file was
+        # uploaded, the supported path is to delete the submission
+        # (which now cleans up its file - see submissions/signals.py)
+        # and upload a new one.
+        if self.instance is not None:
+            raise serializers.ValidationError(
+                "The uploaded file cannot be replaced. Delete this "
+                "submission and upload a new one instead."
+            )
+
         try:
             validate_submission_file(value)
         except SubmissionFileValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
 
-        return value    
+        return value   
 
     def validate_assessment(self, assessment):
         request = self.context["request"]
