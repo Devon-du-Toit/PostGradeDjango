@@ -1,5 +1,7 @@
 import logging
 
+from django.urls import reverse
+
 from rest_framework import serializers
 
 from submissions.models import Submission
@@ -16,6 +18,13 @@ from submissions.validation import (
 logger = logging.getLogger(__name__)
 
 class SubmissionSerializer(serializers.ModelSerializer):
+    # "file" is accepted on upload but deliberately never rendered
+    # back out (see extra_kwargs below): a raw MEDIA_URL path would
+    # be guessable and unauthenticated. Callers instead get
+    # "download_url", which always points at the authenticated,
+    # course-owner-checked download endpoint.
+    download_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Submission
         fields = [
@@ -23,6 +32,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "assessment",
             "enrollment",
             "file",
+            "download_url",
             "original_filename",
             "status",
             "created_at",
@@ -35,6 +45,24 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        extra_kwargs = {
+            "file": {"write_only": True},
+        }
+
+    def get_download_url(self, submission):
+        if not submission.file:
+            return None
+
+        request = self.context.get("request")
+        path = reverse(
+            "submission-file-download",
+            args=[submission.id],
+        )
+
+        if request is not None:
+            return request.build_absolute_uri(path)
+
+        return path
 
     def validate_file(self, value):
         try:

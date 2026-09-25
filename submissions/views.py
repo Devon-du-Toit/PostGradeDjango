@@ -1,3 +1,5 @@
+from django.http import FileResponse, Http404
+
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -159,3 +161,48 @@ class SubmissionVerificationQueueView(
                 Submission.Status.MATCHED,
             ],
         ).order_by("created_at")
+
+
+
+class SubmissionFileDownloadView(generics.GenericAPIView):
+    """
+    Serves the original uploaded submission file.
+
+    Deliberately does NOT expose a raw MEDIA_URL path anywhere in
+    the API: the only way to reach the file's bytes is through
+    this endpoint, which enforces the same course-owner check used
+    everywhere else in this app. Requesting another lecturer's
+    submission id here returns 404, matching the existing pattern
+    (e.g. SubmissionMarkView) of not confirming another user's
+    object exists at all.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Submission.objects.filter(
+            assessment__course__owner=self.request.user,
+        )
+
+    def get(self, request, pk):
+        submission = generics.get_object_or_404(
+            self.get_queryset(),
+            pk=pk,
+        )
+
+        if not submission.file:
+            raise Http404
+
+        try:
+            file_handle = submission.file.open("rb")
+        except (FileNotFoundError, OSError):
+            raise Http404
+
+        return FileResponse(
+            file_handle,
+            as_attachment=True,
+            filename=(
+                submission.original_filename
+                or submission.file.name
+            ),
+        )

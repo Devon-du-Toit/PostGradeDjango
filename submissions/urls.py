@@ -2,6 +2,7 @@ from django.urls import path
 
 from submissions.views import (
     SubmissionDetailView,
+    SubmissionFileDownloadView,
     SubmissionListCreateView,
     SubmissionMarkView,
     SubmissionVerifyView,
@@ -34,5 +35,10 @@ urlpatterns = [
         "<int:pk>/verify/",
         SubmissionVerifyView.as_view(),
         name="submission-verify",
+    ),
+    path(
+        "<int:pk>/file/",
+        SubmissionFileDownloadView.as_view(),
+        name="submission-file-download",
     ),
 ]

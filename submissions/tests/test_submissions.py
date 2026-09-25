@@ -881,3 +881,143 @@ class SubmissionAPITests(TestCase):
             Result.objects.count(),
             0,
         )
+
+
+
+class SubmissionFileDownloadTests(TestCase):
+    """
+    Covers acceptance criterion: originals are only served after a
+    course-owner check, and a guessed/reused download URL cannot be
+    used by another authenticated user (or an anonymous one).
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+
+        self.user = User.objects.create_user(
+            email="teacher@example.com",
+            password="testpass123",
+        )
+
+        self.other_user = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+
+        self.course = Course.objects.create(
+            owner=self.user,
+            code="PHY101",
+            name="Physics 101",
+            year=2026,
+            semester=1,
+        )
+
+        self.assessment = Assessment.objects.create(
+            course=self.course,
+            name="Test 1",
+            max_mark=100,
+            weight=20,
+        )
+
+        self.submission = Submission.objects.create(
+            assessment=self.assessment,
+            file=SimpleUploadedFile(
+                "paper.pdf",
+                b"fake pdf content",
+                content_type="application/pdf",
+            ),
+            original_filename="paper.pdf",
+        )
+
+    def test_owner_can_download_their_submission_file(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            f"/api/submissions/{self.submission.id}/file/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        content = b"".join(response.streaming_content)
+        self.assertEqual(content, b"fake pdf content")
+
+    def test_other_user_cannot_download_via_guessed_url(self):
+        # Same URL the owner would use, but authenticated as a
+        # different lecturer who does not own this course.
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.get(
+            f"/api/submissions/{self.submission.id}/file/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_anonymous_user_cannot_download_submission_file(self):
+        response = self.client.get(
+            f"/api/submissions/{self.submission.id}/file/"
+        )
+
+        self.assertIn(
+            response.status_code,
+            (
+                status.HTTP_401_UNAUTHORIZED,
+                status.HTTP_403_FORBIDDEN,
+            ),
+        )
+
+    def test_download_returns_404_for_nonexistent_submission(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/submissions/999999/file/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    @patch(
+        "submissions.serializers.recognize_submission",
+        return_value=None,
+    )
+    def test_upload_response_exposes_download_url_not_raw_file(
+        self,
+        mock_recognize_submission,
+    ):
+        self.client.force_authenticate(user=self.user)
+
+        uploaded_file = SimpleUploadedFile(
+            "student-paper.pdf",
+            make_valid_pdf_bytes(),
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/submissions/",
+            {
+                "assessment": self.assessment.id,
+                "file": uploaded_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        # The raw MEDIA_URL path must never be exposed: only the
+        # authenticated download endpoint should be reachable.
+        self.assertNotIn("file", response.data)
+        self.assertIn("download_url", response.data)
+        self.assertIn(
+            f"/api/submissions/{response.data['id']}/file/",
+            response.data["download_url"],
+        )
