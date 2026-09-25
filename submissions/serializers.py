@@ -8,6 +8,11 @@ from submissions.recognition.service import (
     recognize_submission,
 )
 
+from submissions.validation import (
+    SubmissionFileValidationError,
+    validate_submission_file,
+)
+
 logger = logging.getLogger(__name__)
 
 class SubmissionSerializer(serializers.ModelSerializer):
@@ -30,6 +35,14 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate_file(self, value):
+        try:
+            validate_submission_file(value)
+        except SubmissionFileValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+
+        return value    
 
     def validate_assessment(self, assessment):
         request = self.context["request"]

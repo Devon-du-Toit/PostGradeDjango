@@ -145,3 +145,11 @@ CORS_ALLOWED_ORIGINS = [
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+# Submission file validation limits.
+# Kept small deliberately: submissions are single-page marked scripts,
+# not general-purpose document storage.
+MAX_SUBMISSION_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
+MAX_SUBMISSION_PDF_PAGES = 1
+MAX_SUBMISSION_IMAGE_DIMENSION_PX = 6000

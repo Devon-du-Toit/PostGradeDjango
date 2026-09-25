@@ -1,3 +1,4 @@
+import pymupdf
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework import status
@@ -12,6 +13,22 @@ from submissions.models import Submission
 
 from django.core import mail
 
+
+def make_valid_pdf_bytes():
+    """
+    Build a tiny, genuinely valid single-page PDF in memory.
+
+    Submission uploads now go through real content validation
+    (see submissions/validation.py), so tests that exercise the
+    upload endpoint need bytes that actually decode as a PDF,
+    not just a filename ending in .pdf.
+    """
+    document = pymupdf.open()
+    try:
+        document.new_page(width=200, height=200)
+        return document.tobytes()
+    finally:
+        document.close()
 
 class SubmissionModelTests(TestCase):
     def setUp(self):
@@ -153,7 +170,7 @@ class SubmissionAPITests(TestCase):
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
-            b"fake pdf content",
+            make_valid_pdf_bytes(),
             content_type="application/pdf",
         )
 
@@ -705,7 +722,7 @@ class SubmissionAPITests(TestCase):
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
-            b"fake pdf content",
+            make_valid_pdf_bytes(),
             content_type="application/pdf",
         )
 
@@ -749,7 +766,7 @@ class SubmissionAPITests(TestCase):
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
-            b"fake pdf content",
+            make_valid_pdf_bytes(),
             content_type="application/pdf",
         )
 
@@ -793,7 +810,7 @@ class SubmissionAPITests(TestCase):
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
-            b"fake pdf content",
+            make_valid_pdf_bytes(),
             content_type="application/pdf",
         )
 
