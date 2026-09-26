@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from assessments.models import Assessment
@@ -69,7 +70,7 @@ class SubmissionAudit(models.Model):
     )
 
     actor = models.ForeignKey(
-        "accounts.User",
+	settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -121,3 +122,5 @@ class SubmissionAudit(models.Model):
 
     def __str__(self):
         return f"Audit #{self.pk} for submission {self.submission_id}"
+
+
