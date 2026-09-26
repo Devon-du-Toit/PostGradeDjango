@@ -79,8 +79,11 @@ class SubmissionMarkView(generics.GenericAPIView):
             assessment=submission.assessment,
         )
 
-        submission.status = Submission.Status.MARKED
-        submission.save(update_fields=["status"])
+        submission.record_status_change(
+            actor=request.user,
+            new_status=Submission.Status.MARKED,
+            reason="Result created",
+        )
         send_result_email(result)
 
         return Response(
@@ -125,6 +128,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
             verify_submission(
                 submission,
                 enrollment,
+                actor=request.user,
             )
         except ValidationError as exc:
             return Response(
