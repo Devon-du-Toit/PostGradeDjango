@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
@@ -12,6 +13,7 @@ from assessments.services import (
     calculate_course_grade,
 )
 from courses.models import Course
+from distribution.services import schedule_result_email
 
 
 class CourseAssessmentListCreateView(generics.ListCreateAPIView):
@@ -84,6 +86,15 @@ class ResultDetailView(generics.RetrieveUpdateDestroyAPIView):
         result = self.get_object()
         context["assessment"] = result.assessment
         return context
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            result = serializer.save()
+
+            # A result already released to the student gets a corrected email;
+            # results never released keep their existing (silent) behaviour.
+            if result.emails.exists():
+                schedule_result_email(result)
 
 
 class CourseGradebookView(APIView):

@@ -13,7 +13,7 @@ def send_student_email(student, subject, message):
     )
 
 
-def send_result_email(result):
+def build_result_email(result):
     student = result.enrollment.student
     assessment = result.assessment
 
@@ -32,6 +32,13 @@ def send_result_email(result):
         f"Regards,\n"
         f"PostGrade"
     )
+
+    return subject, message
+
+
+def send_result_email(result):
+    student = result.enrollment.student
+    subject, message = build_result_email(result)
 
     send_student_email(
         student=student,
