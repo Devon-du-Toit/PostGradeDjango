@@ -61,19 +61,18 @@ class SubmissionSerializer(serializers.ModelSerializer):
             enrollment = None
 
         if enrollment is not None:
-            submission.enrollment = enrollment
-            submission.status = Submission.Status.MATCHED
-        else:
-            submission.status = (
-                Submission.Status.NEEDS_VERIFICATION
+            submission.record_status_change(
+                actor=None,
+                new_status=Submission.Status.MATCHED,
+                reason="Automatic recognition matched",
+                new_enrollment=enrollment,
             )
-
-        submission.save(
-            update_fields=[
-                "enrollment",
-                "status",
-            ]
-        )
+        else:
+            submission.record_status_change(
+                actor=None,
+                new_status=Submission.Status.NEEDS_VERIFICATION,
+                reason="Automatic recognition could not match",
+            )
 
         return submission
 
