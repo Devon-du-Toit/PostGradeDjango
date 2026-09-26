@@ -50,7 +50,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         )
 
         try:
-            enrollment = recognize_submission(
+            recognition_result = recognize_submission(
                 submission
             )
         except Exception:
@@ -58,10 +58,15 @@ class SubmissionSerializer(serializers.ModelSerializer):
                 "Automatic submission recognition failed for submission %s",
                 submission.id,
             )
-            enrollment = None
+            recognition_result = None
 
-        if enrollment is not None:
-            submission.enrollment = enrollment
+        if (
+            recognition_result is not None
+            and recognition_result.enrollment is not None
+        ):
+            submission.enrollment = (
+                recognition_result.enrollment
+            )
             submission.status = Submission.Status.MATCHED
         else:
             submission.status = (
