@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.conf import settings
 from django.db import models
 
@@ -54,24 +55,59 @@ class Submission(models.Model):
 
     def __str__(self):
         return self.original_filename
+    ALLOWED_TRANSITIONS = {
+        "uploaded": {"matched", "needs_verification"},
+        "matched": {"verified", "needs_verification"},
+        "needs_verification": {"verified"},
+        "verified": {"marked"},
+        "marked": set(),
+    } 
     def record_status_change(
         self,
         actor,
         new_status,
         reason="",
+        new_enrollment=None,
     ):
-        previous_status = self.status
-        previous_enrollment = self.enrollment
-
-        audit = SubmissionAudit.objects.create(
-            submission=self,
-            actor=actor,
-            previous_status=previous_status,
-            new_status=new_status,
-            previous_enrollment=previous_enrollment,
-            new_enrollment=self.enrollment,
-            reason=reason,
+        allowed = self.ALLOWED_TRANSITIONS.get(
+            self.status, set()
         )
+        if new_status not in allowed:
+            raise ValueError(
+                f"Illegal transition from {self.status} to {new_status}"
+            )
+
+        with transaction.atomic():
+            locked = (
+                Submission.objects
+                .select_for_update()
+                .get(pk=self.pk)
+            )
+            previous_status = locked.status
+            previous_enrollment = locked.enrollment
+
+            audit = SubmissionAudit.objects.create(
+                submission=self,
+                actor=actor,
+                previous_status=previous_status,
+                new_status=new_status,
+                previous_enrollment=previous_enrollment,
+                new_enrollment=(
+                    new_enrollment
+                    if new_enrollment is not None
+                    else self.enrollment
+                ),
+                reason=reason,
+            )
+
+            self.status = new_status
+            if new_enrollment is not None:
+                self.enrollment = new_enrollment
+                self.save(
+                    update_fields=["status", "enrollment", "updated_at"]
+                )
+            else:
+                self.save(update_fields=["status"])
         return audit
 
     class Meta:
