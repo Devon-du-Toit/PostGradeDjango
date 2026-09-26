@@ -67,6 +67,7 @@ class Submission(models.Model):
         actor,
         new_status,
         reason="",
+        new_enrollment=None,
     ):
         allowed = self.ALLOWED_TRANSITIONS.get(
             self.status, set()
@@ -91,13 +92,22 @@ class Submission(models.Model):
                 previous_status=previous_status,
                 new_status=new_status,
                 previous_enrollment=previous_enrollment,
-                new_enrollment=self.enrollment,
+                new_enrollment=(
+                    new_enrollment
+                    if new_enrollment is not None
+                    else self.enrollment
+                ),
                 reason=reason,
             )
 
             self.status = new_status
-            self.save(update_fields=["status"])
-
+            if new_enrollment is not None:
+                self.enrollment = new_enrollment
+                self.save(
+                    update_fields=["status", "enrollment", "updated_at"]
+                )
+            else:
+                self.save(update_fields=["status"])
         return audit
 
     class Meta:
