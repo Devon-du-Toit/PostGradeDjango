@@ -598,7 +598,7 @@ class SubmissionAPITests(TestCase):
             Submission.Status.UPLOADED,
         )
 
-    def test_matching_submission_changes_status_to_matched(self):
+    def test_generic_update_does_not_change_status(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="55555555",
@@ -635,7 +635,7 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(
             submission.status,
-            Submission.Status.MATCHED,
+            Submission.Status.UPLOADED,
         )
 
     def test_marking_verified_submission_changes_status_to_marked(self):
