@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.conf import settings
 from django.db import models
 
@@ -54,26 +55,45 @@ class Submission(models.Model):
 
     def __str__(self):
         return self.original_filename
+    ALLOWED_TRANSITIONS = {
+        "uploaded": {"matched", "needs_verification"},
+        "matched": {"verified", "needs_verification"},
+        "needs_verification": {"verified"},
+        "verified": {"marked"},
+        "marked": set(),
+    } 
     def record_status_change(
         self,
         actor,
         new_status,
         reason="",
     ):
-        previous_status = self.status
-        previous_enrollment = self.enrollment
-
-        audit = SubmissionAudit.objects.create(
-            submission=self,
-            actor=actor,
-            previous_status=previous_status,
-            new_status=new_status,
-            previous_enrollment=previous_enrollment,
-            new_enrollment=self.enrollment,
-            reason=reason,
+        allowed = self.ALLOWED_TRANSITIONS.get(
+            self.status, set()
         )
-        return audit
+        if new_status not in allowed:
+            raise ValueError(
+                f"Illegal transition from {self.status} to {new_status}"
+            )
 
+        with transaction.atomic():
+            previous_status = self.status
+            previous_enrollment = self.enrollment
+
+            audit = SubmissionAudit.objects.create(
+                submission=self,
+                actor=actor,
+                previous_status=previous_status,
+                new_status=new_status,
+                previous_enrollment=previous_enrollment,
+                new_enrollment=self.enrollment,
+                reason=reason,
+            )
+
+            self.status = new_status
+            self.save(update_fields=["status"])
+
+        return audit
     class Meta:
         constraints = [
             models.CheckConstraint(
