@@ -54,7 +54,25 @@ class Submission(models.Model):
 
     def __str__(self):
         return self.original_filename
+    def record_status_change(
+        self,
+        actor,
+        new_status,
+        reason="",
+    ):
+        previous_status = self.status
+        previous_enrollment = self.enrollment
 
+        audit = SubmissionAudit.objects.create(
+            submission=self,
+            actor=actor,
+            previous_status=previous_status,
+            new_status=new_status,
+            previous_enrollment=previous_enrollment,
+            new_enrollment=self.enrollment,
+            reason=reason,
+        )
+        return audit
 
 class SubmissionAudit(models.Model):
     """Records every status change on a Submission.
