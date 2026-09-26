@@ -77,8 +77,13 @@ class Submission(models.Model):
             )
 
         with transaction.atomic():
-            previous_status = self.status
-            previous_enrollment = self.enrollment
+            locked = (
+                Submission.objects
+                .select_for_update()
+                .get(pk=self.pk)
+            )
+            previous_status = locked.status
+            previous_enrollment = locked.enrollment
 
             audit = SubmissionAudit.objects.create(
                 submission=self,
@@ -94,6 +99,7 @@ class Submission(models.Model):
             self.save(update_fields=["status"])
 
         return audit
+
     class Meta:
         constraints = [
             models.CheckConstraint(
