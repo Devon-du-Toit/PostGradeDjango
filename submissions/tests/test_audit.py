@@ -1,3 +1,4 @@
+
 from django.test import TestCase
 
 from accounts.models import User
@@ -75,3 +76,13 @@ class SubmissionAuditTests(TestCase):
         )
 
         self.assertIsNone(audit.actor)
+
+    def test_illegal_transition_raises(self):
+        submission = self._make_submission("test4.pdf")
+
+        with self.assertRaises(ValueError):
+            submission.record_status_change(
+                actor=self.user,
+                new_status=Submission.Status.VERIFIED,
+                reason="illegal jump",
+            )
