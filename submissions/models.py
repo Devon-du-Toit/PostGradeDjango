@@ -74,6 +74,22 @@ class Submission(models.Model):
         )
         return audit
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "uploaded",
+                        "matched",
+                        "needs_verification",
+                        "verified",
+                        "marked",
+                    ]
+                ),
+                name="submission_status_valid",
+            ),
+        ]
+
 class SubmissionAudit(models.Model):
     """Records every status change on a Submission.
 
