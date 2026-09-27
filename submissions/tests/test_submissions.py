@@ -10,7 +10,7 @@ from courses.models import Course
 from distribution.dispatch import process_next_email
 from students.models import Enrollment, Student
 from submissions.models import Submission
-
+from submissions.recognition.types import RecognitionResult
 from django.core import mail
 
 
@@ -711,7 +711,10 @@ class SubmissionAPITests(TestCase):
             student=student,
         )
 
-        mock_recognize_submission.return_value = enrollment
+        mock_recognize_submission.return_value = RecognitionResult(
+            enrollment=enrollment,
+            reason=None,
+        )
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
