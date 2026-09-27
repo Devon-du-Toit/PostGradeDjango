@@ -78,16 +78,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return submission
 
     def update(self, instance, validated_data):
-        instance = super().update(instance, validated_data)
-
-        if instance.enrollment is not None:
-            instance.status = Submission.Status.MATCHED
-        else:
-            instance.status = Submission.Status.UPLOADED
-
-        instance.save(update_fields=["status"])
-
-        return instance
+        # Status changes go through Submission.record_status_change()
+        # so we do not silently reset status on generic edits.
+        return super().update(instance, validated_data)
 
     def validate_enrollment(self, enrollment):
         if enrollment is None:

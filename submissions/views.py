@@ -4,11 +4,13 @@ from rest_framework.response import Response
 
 from assessments.models import Result
 from assessments.serializers import ResultSerializer
+from distribution.serializers import ResultEmailSerializer
+from distribution.services import schedule_result_email
 from submissions.models import Submission
 from submissions.serializers import SubmissionSerializer
-from submissions.emailing import send_result_email
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from students.models import Enrollment
 from submissions.verification import verify_submission
@@ -39,52 +41,60 @@ class SubmissionMarkView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        submission = generics.get_object_or_404(
-            Submission.objects.filter(
-                assessment__course__owner=request.user,
-            ),
-            pk=pk,
-        )
-
-        if submission.status != Submission.Status.VERIFIED:
-            return Response(
-                {
-                    "detail": (
-                        "Submission must be verified "
-                        "before entering a mark."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+        # Mark, status and email record commit together: a mail problem
+        # can never undo or lose a saved mark.
+        with transaction.atomic():
+            # Locked so a repeated request waits, then sees "marked".
+            submission = generics.get_object_or_404(
+                Submission.objects.select_for_update().filter(
+                    assessment__course__owner=request.user,
+                ),
+                pk=pk,
             )
 
-        existing_result = Result.objects.filter(
-            assessment=submission.assessment,
-            enrollment=submission.enrollment,
-        ).first()
+            if submission.status != Submission.Status.VERIFIED:
+                return Response(
+                    {
+                        "detail": (
+                            "Submission must be verified "
+                            "before entering a mark."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        serializer = ResultSerializer(
-            existing_result,
-            data={
-                "enrollment": submission.enrollment_id,
-                "mark": request.data.get("mark"),
-            },
-            context={
-                "request": request,
-                "assessment": submission.assessment,
-            },
-        )
+            existing_result = Result.objects.select_for_update().filter(
+                assessment=submission.assessment,
+                enrollment=submission.enrollment,
+            ).first()
 
-        serializer.is_valid(raise_exception=True)
-        result = serializer.save(
-            assessment=submission.assessment,
-        )
+            serializer = ResultSerializer(
+                existing_result,
+                data={
+                    "enrollment": submission.enrollment_id,
+                    "mark": request.data.get("mark"),
+                },
+                context={
+                    "request": request,
+                    "assessment": submission.assessment,
+                },
+            )
 
-        submission.status = Submission.Status.MARKED
-        submission.save(update_fields=["status"])
-        send_result_email(result)
+            serializer.is_valid(raise_exception=True)
+            result = serializer.save(
+                assessment=submission.assessment,
+            )
+
+            submission.status = Submission.Status.MARKED
+            submission.save(update_fields=["status"])
+
+            email = schedule_result_email(result)
 
         return Response(
-            ResultSerializer(result).data,
+            {
+                **ResultSerializer(result).data,
+                "email_delivery": ResultEmailSerializer(email).data,
+            },
             status=(
                 status.HTTP_200_OK
                 if existing_result
