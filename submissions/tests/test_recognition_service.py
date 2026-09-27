@@ -103,9 +103,10 @@ class SubmissionRecognitionServiceTests(TestCase):
         )
 
         self.assertEqual(
-            enrollment,
+            enrollment.enrollment,
             self.enrollment,
         )
+        self.assertIsNone(enrollment.reason)
 
     @patch(
         "submissions.recognition.service."
@@ -145,7 +146,11 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
@@ -206,7 +211,11 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
@@ -232,4 +241,8 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number area could not be identified",
+        )
