@@ -83,8 +83,8 @@ class SubmissionRecognitionServiceTests(TestCase):
         mock_extract_candidate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
-            is_usable=True,
-            reasons=[],
+            usable=True,
+            reason=None
         )
 
         mock_find_text.return_value = (
@@ -126,8 +126,8 @@ class SubmissionRecognitionServiceTests(TestCase):
         mock_extract_candidate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
-            is_usable=True,
-            reasons=[],
+            usable=True,
+            reason=None
         )
 
         mock_find_text.return_value = (
@@ -166,8 +166,8 @@ class SubmissionRecognitionServiceTests(TestCase):
         mock_extract_candidate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
-            is_usable=True,
-            reasons=[],
+            usable=True,
+            reason=None
         )
 
         other_course = Course.objects.create(
@@ -222,8 +222,8 @@ class SubmissionRecognitionServiceTests(TestCase):
         mock_find_text,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
-            is_usable=True,
-            reasons=[],
+            usable=True,
+            reason=None
         )
 
         mock_find_text.return_value = None
