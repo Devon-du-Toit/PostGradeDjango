@@ -3,17 +3,19 @@ from submissions.recognition.types import (
     StudentNumberRegion,
 )
 import pymupdf
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from PIL import Image
 
 from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
-from submissions.models import Submission
+from submissions.models import RecognitionAttempt, Submission
 from submissions.recognition.service import (
     recognize_submission,
 )
@@ -21,8 +23,9 @@ from submissions.recognition.types import (
     StudentNumberCandidate,
 )
 from submissions.recognition.types import RecognitionResult
+from submissions.tests.helpers import PNG_SIGNATURE, TemporaryMediaMixin
 
-class SubmissionRecognitionServiceTests(TestCase):
+class SubmissionRecognitionServiceTests(TemporaryMediaMixin, TestCase):
     def setUp(self):
         User = get_user_model()
 
@@ -294,6 +297,21 @@ class SubmissionRecognitionServiceTests(TestCase):
             expected_enrollment,
         )
 
+        # The stored crop of the student-number region is a real PNG.
+        attempt = RecognitionAttempt.objects.get(submission=submission)
+
+        with attempt.region_image.open("rb") as stored:
+            content = stored.read()
+
+        self.assertTrue(content.startswith(PNG_SIGNATURE))
+
+        with Image.open(BytesIO(content)) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(
+                image.size,
+                (attempt.region["width"], attempt.region["height"]),
+            )
+
     def test_recognizes_student_from_real_pdf_submission(self):
         fixture_path = (
                 Path(__file__).parent
@@ -364,4 +382,69 @@ class SubmissionRecognitionServiceTests(TestCase):
         self.assertEqual(
             result.reason,
             "Image is too blurry",
+        )
+
+    @patch(
+        "submissions.recognition.service."
+        "locate_student_number"
+    )
+    def test_error_attempt_records_error_details(
+        self,
+        mock_locate,
+    ):
+        mock_locate.side_effect = RuntimeError("OCR failed")
+
+        with self.assertRaises(RuntimeError):
+            recognize_submission(self.submission)
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
+        )
+
+        self.assertEqual(
+            attempt.outcome,
+            RecognitionAttempt.Outcome.ERROR,
+        )
+        self.assertEqual(attempt.error_type, "RuntimeError")
+        self.assertEqual(attempt.error_message, "OCR failed")
+
+    @patch(
+        "submissions.recognition.service."
+        "extract_student_number_candidate"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "locate_student_number"
+    )
+    def test_attempt_records_every_candidate(
+        self,
+        mock_locate,
+        mock_extract_candidate,
+    ):
+        mock_locate.return_value = StudentNumberRegion(
+            text="Student number / Studentenommer: 37279432",
+            confidence=0.95,
+            box=(0, 0, 10, 10),
+            image_width=100,
+            image_height=100,
+        )
+
+        mock_extract_candidate.return_value = [
+            StudentNumberCandidate(value="37279432", confidence=0.95),
+            StudentNumberCandidate(value="37279433", confidence=0.40),
+        ]
+
+        recognize_submission(self.submission)
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
+        )
+
+        self.assertEqual(attempt.raw_candidate, "37279432")
+        self.assertEqual(
+            attempt.raw_candidates,
+            [
+                {"value": "37279432", "confidence": 0.95},
+                {"value": "37279433", "confidence": 0.40},
+            ],
         )
