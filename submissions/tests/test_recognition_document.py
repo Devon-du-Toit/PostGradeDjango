@@ -153,7 +153,7 @@ class RecognitionDocumentTests(SimpleTestCase):
         pdf_path.unlink(
             missing_ok=True
         ) 
-        def test_multipage_pdf_uses_first_page_only(self):
+    def test_multipage_pdf_uses_first_page_only(self):
             with NamedTemporaryFile(
                 suffix=".pdf",
                 delete=False,

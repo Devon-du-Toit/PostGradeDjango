@@ -111,7 +111,7 @@ class RecognitionQualityTests(SimpleTestCase):
             contrast,
             0,
         )
-        def test_good_scan_is_usable(self):
+    def test_good_scan_is_usable(self):
             image_path = Path(
                 "submissions/tests/fixtures/"
                 "student_numbers/full/"
