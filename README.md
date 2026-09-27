@@ -138,6 +138,16 @@ python manage.py run_recognition_worker
 
 Without a running worker, uploaded submissions remain in the `processing` state. See [`DOCS/RECOGNITION_WORKER.md`](DOCS/RECOGNITION_WORKER.md) for details.
 
+### 9. Run the mail worker
+
+Result emails are sent by a background worker. In a separate terminal, with the same virtual environment active:
+
+```bash
+python manage.py run_mail_worker
+```
+
+Without a running mail worker, marks are saved normally but result emails remain queued. See [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md) for details.
+
 ## API
 
 Authentication endpoints are available under `/api/auth/`.

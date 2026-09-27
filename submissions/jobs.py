@@ -98,7 +98,7 @@ def claim_next_job():
 
 def run_job(job, claimed_attempt):
     try:
-        enrollment = recognize_submission(
+        result = recognize_submission(
             job.submission,
         )
     except Exception as exc:
@@ -110,7 +110,7 @@ def run_job(job, claimed_attempt):
         fail_job(job.id, claimed_attempt, exc)
         return
 
-    finish_job(job.id, claimed_attempt, enrollment)
+    finish_job(job.id, claimed_attempt, result.enrollment)
 
 
 def lock_current_job(job_id, claimed_attempt):

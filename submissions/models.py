@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -54,6 +55,111 @@ class Submission(models.Model):
 
     def __str__(self):
         return self.original_filename
+    def record_status_change(
+        self,
+        actor,
+        new_status,
+        reason="",
+    ):
+        previous_status = self.status
+        previous_enrollment = self.enrollment
+
+        audit = SubmissionAudit.objects.create(
+            submission=self,
+            actor=actor,
+            previous_status=previous_status,
+            new_status=new_status,
+            previous_enrollment=previous_enrollment,
+            new_enrollment=self.enrollment,
+            reason=reason,
+        )
+        return audit
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "uploaded",
+                        "matched",
+                        "needs_verification",
+                        "verified",
+                        "marked",
+                        "processing",
+                        "recognition_failed",
+                    ]
+                ),
+                name="submission_status_valid",
+            ),
+        ]
+
+class SubmissionAudit(models.Model):
+    """Records every status change on a Submission.
+
+    Provides the audit trail required by issue #6: actor, timestamp,
+    previous/new status, previous/new enrollment, and a reason.
+    """
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="audit_entries",
+    )
+
+    actor = models.ForeignKey(
+	settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submission_audits",
+        help_text="User who made the change. Null for system-initiated changes.",
+    )
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    previous_status = models.CharField(
+        max_length=20,
+        choices=Submission.Status.choices,
+        null=True,
+        blank=True,
+        help_text="Null on creation.",
+    )
+
+    new_status = models.CharField(
+        max_length=20,
+        choices=Submission.Status.choices,
+    )
+
+    previous_enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    new_enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    reason = models.TextField(
+        blank=True,
+        help_text="Optional explanation for manual corrections.",
+    )
+
+    class Meta:
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["submission", "-timestamp"]),
+        ]
+
+    def __str__(self):
+        return f"Audit #{self.pk} for submission {self.submission_id}"
+
 
 class RecognitionAttempt(models.Model):
     class Method(models.TextChoices):
@@ -68,6 +174,7 @@ class RecognitionAttempt(models.Model):
             "region_not_found",
             "Region not found",
         )
+        IMAGE_UNUSABLE = "image_unusable", "Image unusable"
         ERROR = "error", "Error"
 
     class ConfidenceType(models.TextChoices):
@@ -99,8 +206,16 @@ class RecognitionAttempt(models.Model):
         blank=True,
     )
 
+    # First candidate only. Kept so existing API clients do not break;
+    # raw_candidates holds every candidate matching evaluated.
     raw_candidate = models.CharField(
         max_length=50,
+        blank=True,
+    )
+
+    # [{"value": "37279432", "confidence": 0.97}, ...]
+    raw_candidates = models.JSONField(
+        default=list,
         blank=True,
     )
 
@@ -145,6 +260,17 @@ class RecognitionAttempt(models.Model):
 
     quality_issues = models.JSONField(
         default=list,
+        blank=True,
+    )
+
+    # Set when outcome is "error". The type is safe to expose; the
+    # message can contain server paths and stays internal.
+    error_type = models.CharField(
+        max_length=100,
+        blank=True,
+    )
+
+    error_message = models.TextField(
         blank=True,
     )
 

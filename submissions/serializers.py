@@ -25,6 +25,7 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             "processing_version",
             "raw_text",
             "raw_candidate",
+            "raw_candidates",
             "suggested_enrollment",
             "suggested_student_number",
             "confidence",
@@ -33,6 +34,7 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             "region",
             "region_image_url",
             "quality_issues",
+            "error_type",
             "created_at",
         ]
         read_only_fields = fields
@@ -156,16 +158,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
         if "file" in validated_data:
             return self.replace_file(instance, validated_data)
 
-        instance = super().update(instance, validated_data)
-
-        if instance.enrollment is not None:
-            instance.status = Submission.Status.MATCHED
-        else:
-            instance.status = Submission.Status.UPLOADED
-
-        instance.save(update_fields=["status"])
-
-        return instance
+        # Status changes go through Submission.record_status_change()
+        # so we do not silently reset status on generic edits.
+        return super().update(instance, validated_data)
 
     def replace_file(self, instance, validated_data):
         # A new file invalidates any match made from the old one.
@@ -217,5 +212,22 @@ class SubmissionSerializer(serializers.ModelSerializer):
                     )
                 }
             )
-    
+
+        # A running recognition job would overwrite a manual choice made now,
+        # because generic edits no longer move the status off "processing".
+        if (
+            self.instance is not None
+            and "enrollment" in attrs
+            and "file" not in attrs
+            and self.instance.status == Submission.Status.PROCESSING
+        ):
+            raise serializers.ValidationError(
+                {
+                    "enrollment": (
+                        "Recognition is still running. Wait for it to "
+                        "finish, or use verify."
+                    )
+                }
+            )
+
         return attrs

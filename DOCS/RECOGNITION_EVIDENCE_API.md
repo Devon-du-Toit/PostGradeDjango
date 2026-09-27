@@ -2,14 +2,16 @@
 
 PostGrade — Group 13
 
-Version 0.2.0
+Version 0.2.1
 
 ## Revision History
 
 | Date | Version | Description | Author |
 |---|---|---|---|
 | 24/09/2026 | 0.1.0 | Initial recognition evidence and review API documentation (Issue #2). | Graham Robert |
+| 27/09/2026 | 0.1.1 | Review changes: `raw_candidates`, `error_type`, `image_unusable` outcome, image-quality reasons, region image cleanup. | Graham Robert |
 | 24/09/2026 | 0.2.0 | Background recognition: `processing` and `recognition_failed` states, `recognition_job` object, retry endpoint, file replacement (Issue #5). | Graham Robert |
+| 27/09/2026 | 0.2.1 | Combined Issue #2 review changes with background recognition; generic `PATCH` of `enrollment` rejected while `processing`. | Graham Robert |
 
 ## Table of Contents
 
@@ -119,7 +121,7 @@ The `status` field of a submission describes its position in the review workflow
 | `matched` | Recognition suggested an enrollment. Requires lecturer confirmation. | Worker, outcome `matched` |
 | `needs_verification` | Recognition could not identify a student. Requires lecturer review. | Worker, outcomes `no_match`, `no_candidate`, `region_not_found` |
 | `recognition_failed` | Recognition raised an error on every attempt. Requires a retry or manual verification. | Worker, after the final failed attempt |
-| `uploaded` | No enrollment assigned outside the recognition workflow. | `PATCH` clearing the enrollment |
+| `uploaded` | File stored before recognition existed; no enrollment assigned. | Submissions created before background recognition |
 | `verified` | A lecturer confirmed or corrected the enrollment. | `POST /submissions/{id}/verify/` |
 | `marked` | A mark was saved and the result email was generated. | `POST /submissions/{id}/mark/` |
 
@@ -153,6 +155,7 @@ Clients should poll `GET /api/submissions/{id}/` (or the list endpoint) while a 
 | `no_match` | `needs_verification` |
 | `no_candidate` | `needs_verification` |
 | `region_not_found` | `needs_verification` |
+| `image_unusable` | `needs_verification` |
 | `error` | Retried automatically; `recognition_failed` after the final attempt |
 
 A recognition failure never causes the upload itself to fail. The file is stored and the upload returns immediately; recognition results arrive asynchronously.
@@ -174,7 +177,8 @@ Every time recognition runs, PostGrade stores one recognition attempt. Submissio
 | `outcome` | string | Result of the attempt. See Section 5.5. |
 | `processing_version` | string | Version of the recognition pipeline that produced the evidence, e.g. `ocr-1`. |
 | `raw_text` | string | Text read from the student-number region, before any cleaning. OCR only. |
-| `raw_candidate` | string | Student number constructed by the recogniser before class-list matching. Ambiguous positions are written as `X`. |
+| `raw_candidate` | string | The first candidate constructed by the recogniser before class-list matching. Ambiguous positions are written as `X`. Retained for compatibility; see `raw_candidates`. |
+| `raw_candidates` | array | Every candidate evaluated by matching, as `{"value": string, "confidence": number \| null}`, in the order produced by the recogniser. |
 | `suggested_enrollment` | integer \| null | Enrollment suggested by recognition. Set to `null` if that enrollment is later removed. |
 | `suggested_student_number` | string | Student number of the suggested enrollment, kept even if the enrollment is removed. |
 | `confidence` | number \| null | Confidence value. Its meaning depends on `confidence_type`. |
@@ -183,22 +187,24 @@ Every time recognition runs, PostGrade stores one recognition attempt. Submissio
 | `region` | object \| null | Location of the student-number region. See Section 5.6. |
 | `region_image_url` | string \| null | Path of the protected region image, or `null` if no image was stored. |
 | `quality_issues` | array | Image-quality problems detected. See Section 5.2. |
+| `error_type` | string | Type of the internal error when `outcome` is `error`, e.g. `FileNotFoundError`; otherwise `""`. The error message is stored for administrators but not returned, because it can contain server file paths. |
 | `created_at` | string | When the attempt was recorded. |
 
 `recognition` is `null` for submissions uploaded before recognition evidence was introduced.
 
 ### 5.2 Quality Issues
 
-`quality_issues` lists zero or more of the following codes.
+When the image-quality check (Issue #3) rejects an image, recognition stops, `outcome` is `image_unusable`, and `quality_issues` contains the reason reported by the check:
 
-| Code | Meaning | Source |
-|---|---|---|
-| `blurry` | Image too blurry for reliable recognition. | SF5-FR2 |
-| `rotated` | Incorrect page orientation. | SF5-FR3 |
-| `cropped_section` | Student-number section partially outside the image. | SF5-FR4 |
-| `missing_section` | Student-number section not present. | SF5-FR4 |
+| Reason | Source |
+|---|---|
+| `Image resolution is too low` | SF5 |
+| `Image is too blurry` | SF5-FR2 |
+| `Image is too dark` | SF5 |
+| `Image is too bright` | SF5 |
+| `Image contrast is too low` | SF5 |
 
-Image-quality checking is not yet implemented; the array is currently always empty.
+For all other outcomes the array is empty. Orientation (SF5-FR3) and cropped or missing student-number sections (SF5-FR4) are not yet detected.
 
 ### 5.3 Confidence Types
 
@@ -233,6 +239,7 @@ OCR recognition always returns an empty array.
 | `no_match` | A candidate was read but did not match exactly one enrolled student. |
 | `no_candidate` | The region was found but no student number could be read from it. |
 | `region_not_found` | The student-number region was not found on the page. |
+| `image_unusable` | The image-quality check rejected the image; see `quality_issues`. |
 | `error` | Recognition failed with an internal error. |
 
 ### 5.6 Region
@@ -573,7 +580,7 @@ Replaces a submission's file, for example with a clearer scan. Existing endpoint
 4. The status becomes `processing` and a new job is queued for the new file.
 5. The old file is kept in storage.
 
-A `PATCH` without `file` behaves as before: it updates the enrollment and sets the status to `matched` or `uploaded`.
+A `PATCH` without `file` updates the given fields but **does not change the status** (status changes go through the workflow endpoints). Changing `enrollment` this way is rejected while the submission is `processing`, because the running recognition job would otherwise overwrite it; use `POST /api/submissions/{id}/verify/` instead.
 
 **Outputs**
 
@@ -615,6 +622,7 @@ Field validation errors map each field to a list of messages:
 | `400` | Verify a marked submission | `{"detail": "A marked submission cannot be re-verified."}` |
 | `400` | Retry a submission that is not `recognition_failed` or `needs_verification` | `{"detail": "Only submissions whose recognition failed or needs verification can be retried."}` |
 | `400` | Replace the file of a marked submission | `{"file": ["The file of a marked submission cannot be replaced."]}` |
+| `400` | `PATCH` `enrollment` while the submission is `processing` | `{"enrollment": ["Recognition is still running. Wait for it to finish, or use verify."]}` |
 | `401` | No `Authorization` header | `{"detail": "Authentication credentials were not provided."}` |
 | `401` | Invalid or expired token | See 7.3 |
 | `404` | Submission not found or not owned | `{"detail": "No Submission matches the given query."}` |
@@ -782,6 +790,8 @@ All columns were read, but the image is blurred and the confidence is below the 
 - Submissions uploaded before this release have `recognition: null`. Clients must handle this value.
 - The database change is a single new table (`submissions_recognitionattempt`, migration `0004_recognitionattempt`). No existing data is modified and no backfill is required.
 - `processing_version` must be changed whenever the recognition pipeline's behaviour changes, so that evidence produced by different versions can be distinguished.
+- Version 0.1.1 adds `raw_candidates` and `error_type` and the `image_unusable` outcome. `raw_candidate` is deliberately kept unchanged so that existing clients continue to work; it may be removed in a later, announced breaking change once clients use `raw_candidates`.
+- Region images are deleted from storage when their recognition attempt is deleted, including when the submission is deleted. Deletion happens only after the database delete commits.
 
 ### 9.1 Background Processing (Issue #5)
 
@@ -805,6 +815,9 @@ All columns were read, but the image is blurred and the confidence is below the 
 | 04 | Bubble recognition must not auto-match a `raw_candidate` containing `X`: the current fuzzy matching tolerates one differing character and could otherwise match it. | TBD |
 | 05 | Minimum confidence threshold for automatic matching is undefined (Technical Specification Issue 04; SF6-FR10 proposes 85% for `bubble_margin`). | TBD |
 | 06 | The `file` URL returned on submissions points to `/media/`, which is not served. A protected full-script preview endpoint is required for the review workspace. | TBD |
-| 07 | Image-quality checking (SF5) is not implemented; `quality_issues` is always empty. | TBD |
-| 08 | If a file is replaced while the old file's job is running, that job's recognition attempt may be recorded after the new job's, and briefly appear as the latest `recognition` until the new job completes. Submission status and enrollment are not affected. Requires linking each attempt to its job. | TBD |
-| 09 | The Vue frontend does not yet display `processing` or `recognition_failed`, poll processing submissions, or offer the retry action. | TBD |
+| 07 | Image-quality checking covers resolution, blur, exposure and contrast; orientation and cropped/missing sections (SF5-FR3/FR4) are not yet detected. `quality_issues` holds the check's human-readable reason rather than a stable code. | TBD |
+| 08 | `raw_candidate` duplicates the first entry of `raw_candidates`. Kept to avoid breaking the API before the review meeting; removal is a breaking change to agree with the frontend. | TBD |
+| 09 | Only region images are cleaned up on delete. Uploaded submission files themselves are not removed (retention belongs to Issue #4). | TBD |
+| 10 | If a file is replaced while the old file's job is running, that job's recognition attempt may be recorded after the new job's, and briefly appear as the latest `recognition` until the new job completes. Submission status and enrollment are not affected. Requires linking each attempt to its job. | TBD |
+| 11 | The Vue frontend does not yet display `processing` or `recognition_failed`, poll processing submissions, or offer the retry action. | TBD |
+| 12 | Generic `PATCH /api/submissions/{id}/` can still change `enrollment` outside the verify workflow (for example on a `marked` submission). Only the `processing` case is blocked here; workflow enforcement belongs to Issue #6. | TBD |

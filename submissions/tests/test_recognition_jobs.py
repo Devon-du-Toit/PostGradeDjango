@@ -16,10 +16,20 @@ from courses.models import Course
 from students.models import Enrollment, Student
 from submissions import jobs
 from submissions.models import RecognitionJob, Submission
+from submissions.recognition.types import RecognitionResult
 from submissions.verification import verify_submission
 
 
 RECOGNIZE = "submissions.jobs.recognize_submission"
+
+NOT_MATCHED = RecognitionResult(
+    enrollment=None,
+    reason="Student number could not be matched",
+)
+
+
+def matched_result(enrollment):
+    return RecognitionResult(enrollment=enrollment, reason=None)
 
 
 class RecognitionJobTestMixin:
@@ -111,7 +121,7 @@ class JobOutcomeTests(RecognitionJobTestMixin, TestCase):
     def test_success_matches_submission(self):
         submission = self.create_processing_submission()
 
-        with patch(RECOGNIZE, return_value=self.enrollment):
+        with patch(RECOGNIZE, return_value=matched_result(self.enrollment)):
             jobs.process_next_job()
 
         submission.refresh_from_db()
@@ -124,7 +134,7 @@ class JobOutcomeTests(RecognitionJobTestMixin, TestCase):
     def test_no_match_needs_verification(self):
         submission = self.create_processing_submission()
 
-        with patch(RECOGNIZE, return_value=None):
+        with patch(RECOGNIZE, return_value=NOT_MATCHED):
             jobs.process_next_job()
 
         submission.refresh_from_db()
@@ -191,7 +201,7 @@ class StaleResultTests(RecognitionJobTestMixin, TestCase):
                 Submission.objects.get(pk=running_submission.pk),
                 self.enrollment,
             )
-            return None
+            return NOT_MATCHED
 
         with patch(RECOGNIZE, side_effect=verify_while_running):
             jobs.process_next_job()
@@ -260,7 +270,7 @@ class WorkerFailureTests(RecognitionJobTestMixin, TestCase):
         self.expire_lease(claimed)
         jobs.recover_expired_jobs()
 
-        with patch(RECOGNIZE, return_value=self.enrollment):
+        with patch(RECOGNIZE, return_value=matched_result(self.enrollment)):
             jobs.process_next_job()
 
         submission.refresh_from_db()
@@ -296,7 +306,7 @@ class WorkerFailureTests(RecognitionJobTestMixin, TestCase):
 
         # TestCase runs inside a transaction; the worker's connection
         # cleanup would close the test's own connection.
-        with patch(RECOGNIZE, return_value=self.enrollment), patch(
+        with patch(RECOGNIZE, return_value=matched_result(self.enrollment)), patch(
             "submissions.management.commands.run_recognition_worker"
             ".close_old_connections"
         ):
@@ -402,7 +412,7 @@ class RetryEndpointTests(RecognitionJobTestMixin, TestCase):
         )
 
     def test_owner_can_retry_needs_verification_submission(self):
-        with patch(RECOGNIZE, return_value=None):
+        with patch(RECOGNIZE, return_value=NOT_MATCHED):
             jobs.process_next_job()
 
         response = self.client.post(self.url)
@@ -425,7 +435,7 @@ class RetryEndpointTests(RecognitionJobTestMixin, TestCase):
         )
 
     def test_cannot_retry_matched_submission(self):
-        with patch(RECOGNIZE, return_value=self.enrollment):
+        with patch(RECOGNIZE, return_value=matched_result(self.enrollment)):
             jobs.process_next_job()
 
         response = self.client.post(self.url)
@@ -558,3 +568,70 @@ class ReplacementUploadTests(RecognitionJobTestMixin, TestCase):
         response = self.replace()
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class ProcessingEnrollmentGuardTests(RecognitionJobTestMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+        self.submission = self.create_processing_submission()
+
+    def patch_enrollment(self):
+        return self.client.patch(
+            f"/api/submissions/{self.submission.id}/",
+            {"enrollment": self.enrollment.id},
+            format="json",
+        )
+
+    def test_cannot_set_enrollment_while_processing(self):
+        response = self.patch_enrollment()
+
+        self.submission.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("enrollment", response.data)
+        self.assertIsNone(self.submission.enrollment)
+
+    def test_job_result_is_not_overwritten_by_generic_patch(self):
+        self.patch_enrollment()
+
+        with patch(RECOGNIZE, return_value=NOT_MATCHED):
+            jobs.process_next_job()
+
+        self.submission.refresh_from_db()
+
+        self.assertEqual(
+            self.submission.status,
+            Submission.Status.NEEDS_VERIFICATION,
+        )
+        self.assertIsNone(self.submission.enrollment)
+
+    def test_can_set_enrollment_after_processing(self):
+        with patch(RECOGNIZE, return_value=NOT_MATCHED):
+            jobs.process_next_job()
+
+        response = self.patch_enrollment()
+
+        self.submission.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.submission.enrollment, self.enrollment)
+        # Generic edits no longer change the status.
+        self.assertEqual(
+            self.submission.status,
+            Submission.Status.NEEDS_VERIFICATION,
+        )
+
+    def test_verify_still_works_while_processing(self):
+        response = self.client.post(
+            f"/api/submissions/{self.submission.id}/verify/",
+            {"enrollment": self.enrollment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], Submission.Status.VERIFIED)

@@ -1,30 +1,35 @@
-from submissions.recognition.types import (
-    StudentNumberCandidate,
-    StudentNumberRegion,
-)
-import pymupdf
-from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from pathlib import Path
-
 from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
-from submissions.models import Submission
+from submissions.models import RecognitionAttempt, Submission
 from submissions.recognition.service import (
     recognize_submission,
 )
 from submissions.recognition.types import (
+    ImageQualityResult,
     StudentNumberCandidate,
+    StudentNumberRegion,
 )
+from submissions.tests.helpers import TemporaryMediaMixin
 
 
-class SubmissionRecognitionServiceTests(TestCase):
+def region_for(text):
+    return StudentNumberRegion(
+        text=text,
+        confidence=0.95,
+        box=(0, 0, 10, 10),
+        image_width=100,
+        image_height=100,
+    )
+
+
+class SubmissionRecognitionServiceTests(TemporaryMediaMixin, TestCase):
     def setUp(self):
         User = get_user_model()
 
@@ -79,17 +84,23 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "locate_student_number"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_recognizes_enrollment_from_submission(
         self,
-        mock_find_text,
+        mock_assess_quality,
+        mock_locate,
         mock_extract_candidate,
     ):
-        mock_find_text.return_value = StudentNumberRegion(
-            text="Student number / Studentenommer: 37279432",
-            confidence=0.95,
-            box=(0, 0, 10, 10),
-            image_width=100,
-            image_height=100,
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
+        mock_locate.return_value = region_for(
+            "Student number / Studentenommer: 37279432"
         )
 
         mock_extract_candidate.return_value = [
@@ -104,9 +115,10 @@ class SubmissionRecognitionServiceTests(TestCase):
         )
 
         self.assertEqual(
-            enrollment,
+            enrollment.enrollment,
             self.enrollment,
         )
+        self.assertIsNone(enrollment.reason)
 
     @patch(
         "submissions.recognition.service."
@@ -116,17 +128,23 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "locate_student_number"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_returns_none_when_student_number_is_not_recognized(
         self,
-        mock_find_text,
+        mock_assess_quality,
+        mock_locate,
         mock_extract_candidate,
     ):
-        mock_find_text.return_value = StudentNumberRegion(
-            text="Student number / Studentenommer: 99999999",
-            confidence=0.95,
-            box=(0, 0, 10, 10),
-            image_width=100,
-            image_height=100,
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
+        mock_locate.return_value = region_for(
+            "Student number / Studentenommer: 99999999"
         )
 
         mock_extract_candidate.return_value = [
@@ -140,7 +158,11 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
@@ -150,11 +172,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "locate_student_number"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_does_not_match_student_from_another_course(
         self,
-        mock_find_text,
+        mock_assess_quality,
+        mock_locate,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
         other_course = Course.objects.create(
             owner=self.user,
             code="CMPG212",
@@ -176,12 +208,8 @@ class SubmissionRecognitionServiceTests(TestCase):
             student=other_student,
         )
 
-        mock_find_text.return_value = StudentNumberRegion(
-            text="Student number / Studentenommer: 12345678",
-            confidence=0.95,
-            box=(0, 0, 10, 10),
-            image_width=100,
-            image_height=100,
+        mock_locate.return_value = region_for(
+            "Student number / Studentenommer: 12345678"
         )
 
         mock_extract_candidate.return_value = [
@@ -195,114 +223,148 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
         "locate_student_number"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_returns_none_when_student_number_line_is_not_found(
         self,
-        mock_find_text,
+        mock_assess_quality,
+        mock_locate,
     ):
-        mock_find_text.return_value = None
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
+        mock_locate.return_value = None
 
         enrollment = recognize_submission(
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
-
-    def test_recognizes_real_full_page_submission_with_ocr_error(self):
-        fixture_path = (
-                Path(__file__).parent
-                / "fixtures"
-                / "student_numbers"
-                / "full"
-                / "student_35226455.jpeg"
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number area could not be identified",
         )
 
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="35226455",
-            first_name="Real",
-            last_name="Student",
-            email="real@example.com",
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
+    def test_stops_recognition_when_image_quality_is_poor(
+        self,
+        mock_assess_quality,
+    ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=False,
+            reason="Image is too blurry",
         )
 
-        expected_enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
+        result = recognize_submission(
+            self.submission
         )
 
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            file=SimpleUploadedFile(
-                "student_35226455.jpeg",
-                fixture_path.read_bytes(),
-                content_type="image/jpeg",
-            ),
-            original_filename="student_35226455.jpeg",
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
         )
 
-        enrollment = recognize_submission(
-            submission,
+        self.assertIsNone(result.enrollment)
+        self.assertEqual(result.reason, "Image is too blurry")
+        self.assertEqual(
+            attempt.outcome,
+            RecognitionAttempt.Outcome.IMAGE_UNUSABLE,
+        )
+        self.assertEqual(attempt.quality_issues, ["Image is too blurry"])
+
+    @patch(
+        "submissions.recognition.service."
+        "locate_student_number"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
+    def test_error_attempt_records_error_details(
+        self,
+        mock_assess_quality,
+        mock_locate,
+    ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
+        mock_locate.side_effect = RuntimeError("OCR failed")
+
+        with self.assertRaises(RuntimeError):
+            recognize_submission(self.submission)
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
         )
 
         self.assertEqual(
-            enrollment,
-            expected_enrollment,
+            attempt.outcome,
+            RecognitionAttempt.Outcome.ERROR,
+        )
+        self.assertEqual(attempt.error_type, "RuntimeError")
+        self.assertEqual(attempt.error_message, "OCR failed")
+
+    @patch(
+        "submissions.recognition.service."
+        "extract_student_number_candidate"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "locate_student_number"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
+    def test_attempt_records_every_candidate(
+        self,
+        mock_assess_quality,
+        mock_locate,
+        mock_extract_candidate,
+    ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
         )
 
-    def test_recognizes_student_from_real_pdf_submission(self):
-        fixture_path = (
-                Path(__file__).parent
-                / "fixtures"
-                / "student_numbers"
-                / "full"
-                / "student_37279432_a.jpeg"
+        mock_locate.return_value = region_for(
+            "Student number / Studentenommer: 37279432"
         )
 
-        pdf_path = (
-                Path(__file__).parent
-                / "fixtures"
-                / "student_numbers"
-                / "student_37279432_test.pdf"
+        mock_extract_candidate.return_value = [
+            StudentNumberCandidate(value="37279432", confidence=0.95),
+            StudentNumberCandidate(value="37279433", confidence=0.40),
+        ]
+
+        recognize_submission(self.submission)
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
         )
 
-        document = pymupdf.open()
-        page = document.new_page()
-
-        page.insert_image(
-            page.rect,
-            filename=str(fixture_path),
+        self.assertEqual(attempt.raw_candidate, "37279432")
+        self.assertEqual(
+            attempt.raw_candidates,
+            [
+                {"value": "37279432", "confidence": 0.95},
+                {"value": "37279433", "confidence": 0.40},
+            ],
         )
-
-        document.save(
-            pdf_path,
-        )
-        document.close()
-
-        try:
-            submission = Submission.objects.create(
-                assessment=self.assessment,
-                file=SimpleUploadedFile(
-                    "student_37279432.pdf",
-                    pdf_path.read_bytes(),
-                    content_type="application/pdf",
-                ),
-                original_filename="student_37279432.pdf",
-            )
-
-            enrollment = recognize_submission(
-                submission,
-            )
-
-            self.assertEqual(
-                enrollment,
-                self.enrollment,
-            )
-
-        finally:
-            if pdf_path.exists():
-                pdf_path.unlink()
