@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 
 from accounts.models import User
 from assessments.models import Assessment
@@ -382,4 +382,83 @@ class SubmissionVerificationAPITests(TestCase):
         self.assertEqual(
             self.submission.status,
             Submission.Status.MARKED,
+        )
+
+class ConcurrentSubmissionWorkflowTests(TransactionTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="concurrent@example.com",
+            password="testpass123",
+        )
+
+        self.course = Course.objects.create(
+            owner=self.user,
+            name="Physics",
+            code="PHY201",
+            year=2026,
+            semester=1,
+        )
+
+        self.assessment = Assessment.objects.create(
+            course=self.course,
+            name="Concurrent Test",
+            max_mark=100,
+            weight=20,
+        )
+
+        self.student = Student.objects.create(
+            owner=self.user,
+            student_number="98765432",
+            first_name="Concurrent",
+            last_name="Student",
+            email="98765432@example.com",
+        )
+
+        self.enrollment = Enrollment.objects.create(
+            course=self.course,
+            student=self.student,
+        )
+
+        self.submission = Submission.objects.create(
+            assessment=self.assessment,
+            enrollment=self.enrollment,
+            file="submissions/concurrent-test.pdf",
+            original_filename="concurrent-test.pdf",
+            status=Submission.Status.VERIFIED,
+        )
+    def test_concurrent_verification_attempts_keep_valid_status(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from django.db import close_old_connections
+
+        def verify():
+            close_old_connections()
+
+            submission = Submission.objects.get(
+                pk=self.submission.pk,
+            )
+            enrollment = Enrollment.objects.get(
+                pk=self.enrollment.pk,
+            )
+
+            verify_submission(
+                submission,
+                enrollment,
+            )
+
+            close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(verify),
+                executor.submit(verify),
+            ]
+
+            for future in futures:
+                future.result()
+
+        self.submission.refresh_from_db()
+
+        self.assertEqual(
+            self.submission.status,
+            Submission.Status.VERIFIED,
         )
