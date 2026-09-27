@@ -15,8 +15,17 @@ from submissions.recognition.matching import (
 from submissions.recognition.paddleocr import (
     extract_student_number_candidate,
 )
+from submissions.recognition.quality import (
+    assess_image_quality,
+)
+from submissions.recognition.types import (
+    RecognitionResult,
+)
 
 PROCESSING_VERSION = "ocr-1"
+
+REASON_AREA_NOT_FOUND = "Student number area could not be identified"
+REASON_NOT_MATCHED = "Student number could not be matched"
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +37,15 @@ def recognize_submission(submission):
     )
 
     try:
-        enrollment = run_recognition(submission, attempt)
+        result = run_recognition(submission, attempt)
     except Exception:
         attempt.outcome = RecognitionAttempt.Outcome.ERROR
         attempt.save()
         raise
-    
+
     attempt.save()
 
-    return enrollment
+    return result
 
 def save_region_image(attempt, image_path, box):
     try:
@@ -53,17 +62,35 @@ def save_region_image(attempt, image_path, box):
         )
 
 def run_recognition(submission, attempt):
+    # Determine which student this uploaded script belongs to.
     with recognition_image(
         submission.file.path
     ) as image_path:
+
+        # Check image quality before trying OCR.
+        quality_result = assess_image_quality(
+            image_path
+        )
+
+        if not quality_result.usable:
+            attempt.outcome = RecognitionAttempt.Outcome.IMAGE_UNUSABLE
+            attempt.quality_issues = [quality_result.reason]
+            return RecognitionResult(
+                enrollment=None,
+                reason=quality_result.reason,
+            )
+
         region = locate_student_number(image_path)
 
         if region is not None:
             save_region_image(attempt, image_path, region.box)
-    
+
     if region is None:
         attempt.outcome = RecognitionAttempt.Outcome.REGION_NOT_FOUND
-        return None
+        return RecognitionResult(
+            enrollment=None,
+            reason=REASON_AREA_NOT_FOUND,
+        )
 
     x1, y1, x2, y2 = region.box
 
@@ -85,8 +112,11 @@ def run_recognition(submission, attempt):
     )
 
     if not candidates:
-        attempt.outcome = (RecognitionAttempt.Outcome.NO_CANDIDATE)
-        return None
+        attempt.outcome = RecognitionAttempt.Outcome.NO_CANDIDATE
+        return RecognitionResult(
+            enrollment=None,
+            reason=REASON_NOT_MATCHED,
+        )
 
     attempt.raw_candidate = candidates[0].value
 
@@ -108,7 +138,10 @@ def run_recognition(submission, attempt):
 
     if matched_number is None:
         attempt.outcome = RecognitionAttempt.Outcome.NO_MATCH
-        return None
+        return RecognitionResult(
+            enrollment=None,
+            reason=REASON_NOT_MATCHED,
+        )
 
     enrollment = enrollment_by_number[matched_number]
 
@@ -116,4 +149,7 @@ def run_recognition(submission, attempt):
     attempt.suggested_enrollment = enrollment
     attempt.suggested_student_number = matched_number
 
-    return enrollment
+    return RecognitionResult(
+        enrollment=enrollment,
+        reason=None,
+    )

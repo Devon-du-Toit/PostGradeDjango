@@ -72,6 +72,12 @@ class Result(models.Model):
         ],
     )
 
+    # Incremented whenever the mark changes; result emails are tied to it.
+    version = models.PositiveIntegerField(
+        default=1,
+        editable=False,
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
@@ -87,6 +93,35 @@ class Result(models.Model):
                 name="unique_result_per_assessment_enrollment",
             ),
         ]
+
+    @classmethod
+    def from_db(cls, *args, **kwargs):
+        instance = super().from_db(*args, **kwargs)
+        instance._saved_mark = instance.mark
+        return instance
+
+    def refresh_from_db(self, *args, **kwargs):
+        super().refresh_from_db(*args, **kwargs)
+        self._saved_mark = self.mark
+
+    def save(self, *args, **kwargs):
+        saved_mark = getattr(self, "_saved_mark", None)
+
+        if (
+            self.pk is not None
+            and saved_mark is not None
+            and self.mark != saved_mark
+        ):
+            self.version += 1
+
+            update_fields = kwargs.get("update_fields")
+
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "version"}
+
+        super().save(*args, **kwargs)
+
+        self._saved_mark = self.mark
 
     def clean(self):
         super().clean()

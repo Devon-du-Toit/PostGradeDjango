@@ -7,9 +7,10 @@ from unittest.mock import patch
 from accounts.models import User
 from assessments.models import Assessment, Result
 from courses.models import Course
+from distribution.dispatch import process_next_email
 from students.models import Enrollment, Student
 from submissions.models import Submission
-
+from submissions.recognition.types import RecognitionResult
 from django.core import mail
 
 
@@ -408,6 +409,15 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(result.mark, 75)
 
+        # Marking queues the email; the mail worker sends it.
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(
+            response.data["email_delivery"]["status"],
+            "queued",
+        )
+
+        process_next_email()
+
         self.assertEqual(len(mail.outbox), 1)
 
         email = mail.outbox[0]
@@ -598,7 +608,7 @@ class SubmissionAPITests(TestCase):
             Submission.Status.UPLOADED,
         )
 
-    def test_matching_submission_changes_status_to_matched(self):
+    def test_generic_update_does_not_change_status(self):
         student = Student.objects.create(
             owner=self.user,
             student_number="55555555",
@@ -635,7 +645,7 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(
             submission.status,
-            Submission.Status.MATCHED,
+            Submission.Status.UPLOADED,
         )
 
     def test_marking_verified_submission_changes_status_to_marked(self):
@@ -701,7 +711,10 @@ class SubmissionAPITests(TestCase):
             student=student,
         )
 
-        mock_recognize_submission.return_value = enrollment
+        mock_recognize_submission.return_value = RecognitionResult(
+            enrollment=enrollment,
+            reason=None,
+        )
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
