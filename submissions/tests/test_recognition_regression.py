@@ -42,43 +42,43 @@ class RecognitionRegressionTests(SimpleTestCase):
     #synthetic numbers that don't belong to any valid student
     # false number regression
     def test_false_match_regression_cases(self):
-            valid_student_numbers = [
-                "12345678",
-                "23456789",
-                "34567890",
-                "45678901",
-            ]
+        valid_student_numbers = [
+            "12345678",
+            "23456789",
+            "34567890",
+            "45678901",
+        ]
 
-            cases = [
-                "99999999",
-                "11111111",
-                "87654321",
-            ]
+        cases = [
+            "99999999",
+            "11111111",
+            "87654321",
+        ]
 
-            false_matches = 0
+        false_matches = 0
 
-            for candidate_value in cases:
-                candidate = StudentNumberCandidate(
-                    value=candidate_value,
-                    confidence=0.95,
-                )
-
-                match = find_best_student_number_match(
-                    candidates=[candidate],
-                    valid_student_numbers=valid_student_numbers,
-                )
-
-                if match is not None:
-                    false_matches += 1
-
-            self.assertEqual(
-                false_matches,
-                0,
-                (
-                    "Recognition regression: "
-                    f"{false_matches} false match(es) detected"
-                ),
+        for candidate_value in cases:
+            candidate = StudentNumberCandidate(
+                value=candidate_value,
+                confidence=0.95,
             )
+
+            match = find_best_student_number_match(
+                candidates=[candidate],
+                valid_student_numbers=valid_student_numbers,
+            )
+
+            if match is not None:
+                false_matches += 1
+
+        self.assertEqual(
+            false_matches,
+            0,
+            (
+                "Recognition regression: "
+                f"{false_matches} false match(es) detected"
+            ),
+        )
     #metrics test
     def test_recognition_regression_metrics(self):
         valid_student_numbers = [
@@ -132,13 +132,6 @@ class RecognitionRegressionTests(SimpleTestCase):
             if match is not None:
                 false_matches += 1
 
-        print(
-            "\nRecognition regression metrics:"
-            f"\nExact-number matches: "
-            f"{exact_matches}/{len(exact_cases)}"
-            f"\nFalse matches: "
-            f"{false_matches}/{len(no_match_cases)}"
-        )
 
         self.assertEqual(
             exact_matches,
@@ -151,3 +144,44 @@ class RecognitionRegressionTests(SimpleTestCase):
             0,
             "False-match recognition regressed",
         )
+    def test_ambiguous_student_number_returns_no_match(self):
+        valid_student_numbers = [
+            "12345678",
+            "12345679",
+        ]
+
+        candidate = StudentNumberCandidate(
+            value="12345670",
+            confidence=0.95,
+        )
+
+        match = find_best_student_number_match(
+            candidates=[candidate],
+            valid_student_numbers=valid_student_numbers,
+        )
+
+        self.assertIsNone(match) 
+
+    def test_multiple_possible_candidate_matches_return_no_match(self):
+        valid_student_numbers = [
+            "12345678",
+            "87654321",
+        ]
+
+        candidates = [
+            StudentNumberCandidate(
+                value="12345670",
+                confidence=0.95,
+            ),
+            StudentNumberCandidate(
+                value="87654320",
+                confidence=0.95,
+            ),
+        ]
+
+        match = find_best_student_number_match(
+            candidates=candidates,
+            valid_student_numbers=valid_student_numbers,
+        )
+
+        self.assertIsNone(match)   
