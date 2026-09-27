@@ -23,6 +23,7 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             "processing_version",
             "raw_text",
             "raw_candidate",
+            "raw_candidates",
             "suggested_enrollment",
             "suggested_student_number",
             "confidence",
@@ -31,6 +32,7 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             "region",
             "region_image_url",
             "quality_issues",
+            "error_type",
             "created_at",
         ]
         read_only_fields = fields

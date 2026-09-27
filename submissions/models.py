@@ -203,8 +203,16 @@ class RecognitionAttempt(models.Model):
         blank=True,
     )
 
+    # First candidate only. Kept so existing API clients do not break;
+    # raw_candidates holds every candidate matching evaluated.
     raw_candidate = models.CharField(
         max_length=50,
+        blank=True,
+    )
+
+    # [{"value": "37279432", "confidence": 0.97}, ...]
+    raw_candidates = models.JSONField(
+        default=list,
         blank=True,
     )
 
@@ -249,6 +257,17 @@ class RecognitionAttempt(models.Model):
 
     quality_issues = models.JSONField(
         default=list,
+        blank=True,
+    )
+
+    # Set when outcome is "error". The type is safe to expose; the
+    # message can contain server paths and stays internal.
+    error_type = models.CharField(
+        max_length=100,
+        blank=True,
+    )
+
+    error_message = models.TextField(
         blank=True,
     )
 

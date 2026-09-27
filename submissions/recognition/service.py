@@ -24,6 +24,8 @@ from submissions.recognition.types import (
 
 PROCESSING_VERSION = "ocr-1"
 
+MAX_ERROR_LENGTH = 2000
+
 REASON_AREA_NOT_FOUND = "Student number area could not be identified"
 REASON_NOT_MATCHED = "Student number could not be matched"
 
@@ -38,8 +40,10 @@ def recognize_submission(submission):
 
     try:
         result = run_recognition(submission, attempt)
-    except Exception:
+    except Exception as exc:
         attempt.outcome = RecognitionAttempt.Outcome.ERROR
+        attempt.error_type = type(exc).__name__
+        attempt.error_message = str(exc)[:MAX_ERROR_LENGTH]
         attempt.save()
         raise
 
@@ -119,6 +123,13 @@ def run_recognition(submission, attempt):
         )
 
     attempt.raw_candidate = candidates[0].value
+    attempt.raw_candidates = [
+        {
+            "value": candidate.value,
+            "confidence": candidate.confidence,
+        }
+        for candidate in candidates
+    ]
 
     enrollments = (
         submission.assessment.course
