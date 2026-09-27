@@ -12,6 +12,7 @@ from submissions.recognition.service import (
     recognize_submission,
 )
 from submissions.recognition.types import (
+    ImageQualityResult,
     StudentNumberCandidate,
 )
 
@@ -71,11 +72,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_recognizes_enrollment_from_submission(
         self,
+        mock_assess_quality,
         mock_find_text,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            is_usable=True,
+            reasons=[],
+        )
+
         mock_find_text.return_value = (
             "Student number / Studentenommer: 37279432"
         )
@@ -104,11 +115,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_returns_none_when_student_number_is_not_recognized(
         self,
+        mock_assess_quality,
         mock_find_text,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            is_usable=True,
+            reasons=[],
+        )
+
         mock_find_text.return_value = (
             "Student number / Studentenommer: 99999999"
         )
@@ -134,11 +155,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_does_not_match_student_from_another_course(
         self,
+        mock_assess_quality,
         mock_find_text,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            is_usable=True,
+            reasons=[],
+        )
+
         other_course = Course.objects.create(
             owner=self.user,
             code="CMPG212",
@@ -181,10 +212,20 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_returns_none_when_student_number_line_is_not_found(
         self,
+        mock_assess_quality,
         mock_find_text,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            is_usable=True,
+            reasons=[],
+        )
+
         mock_find_text.return_value = None
 
         enrollment = recognize_submission(
