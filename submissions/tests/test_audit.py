@@ -86,3 +86,38 @@ class SubmissionAuditTests(TestCase):
                 new_status=Submission.Status.VERIFIED,
                 reason="illegal jump",
             )
+
+    def test_stale_update_is_rejected(self):
+        submission = self._make_submission("test_stale.pdf")
+        original_version = submission.version
+
+        # Simulate another client updating the row first.
+        submission.record_status_change(
+            actor=self.user,
+            new_status=Submission.Status.MATCHED,
+            reason="first write",
+        )
+        submission.refresh_from_db()
+
+        # Now a second client sends an update using the version it read
+        # before the first write happened.
+        from rest_framework.test import APIClient
+
+        api_client = APIClient()
+        api_client.force_authenticate(user=self.user)
+        response = api_client.patch(
+            f"/api/submissions/{submission.id}/",
+            {
+                "version": original_version,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("version", response.data)
+
+        submission.refresh_from_db()
+        self.assertEqual(
+            submission.status,
+            Submission.Status.MATCHED,
+        )

@@ -53,6 +53,10 @@ class Submission(models.Model):
         auto_now=True,
     )
 
+    version = models.PositiveIntegerField(
+        default=0,
+    )
+
     def __str__(self):
         return self.original_filename
     ALLOWED_TRANSITIONS = {
@@ -101,13 +105,21 @@ class Submission(models.Model):
             )
 
             self.status = new_status
+            self.version = locked.version + 1
             if new_enrollment is not None:
                 self.enrollment = new_enrollment
                 self.save(
-                    update_fields=["status", "enrollment", "updated_at"]
+                    update_fields=[
+                        "status",
+                        "enrollment",
+                        "version",
+                        "updated_at",
+                    ]
                 )
             else:
-                self.save(update_fields=["status"])
+                self.save(
+                    update_fields=["status", "version", "updated_at"]
+                )
         return audit
 
     class Meta:
