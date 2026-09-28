@@ -14,6 +14,12 @@ from submissions.recognition.matching import (
 from submissions.recognition.paddleocr import (
     extract_student_number_candidate,
 )
+from submissions.recognition.quality import (
+    assess_image_quality,
+)
+from submissions.recognition.types import (
+    RecognitionResult,
+)
 
 
 @contextmanager
@@ -47,10 +53,23 @@ def _staged_local_file(field_file):
 
 
 def recognize_submission(submission):
+    # Determine which student this uploaded script belongs to.
     with _staged_local_file(submission.file) as local_path:
         with recognition_image(
             local_path
         ) as image_path:
+
+            # Check image quality before trying OCR.
+            quality_result = assess_image_quality(
+                image_path
+            )
+
+            if not quality_result.usable:
+                return RecognitionResult(
+                    enrollment=None,
+                    reason=quality_result.reason,
+                )
+
             student_number_text = (
                 find_student_number_text(
                     image_path
@@ -58,7 +77,12 @@ def recognize_submission(submission):
             )
 
     if student_number_text is None:
-        return None
+        return RecognitionResult(
+            enrollment=None,
+            reason=(
+                "Student number area could not be identified"
+            ),
+        )
 
     candidates = extract_student_number_candidate(
         student_number_text,
@@ -81,6 +105,14 @@ def recognize_submission(submission):
     )
 
     if matched_number is None:
-        return None
+        return RecognitionResult(
+            enrollment=None,
+            reason=(
+                "Student number could not be matched"
+            ),
+        )
 
-    return enrollment_by_number[matched_number]
+    return RecognitionResult(
+        enrollment=enrollment_by_number[matched_number],
+        reason=None,
+    )

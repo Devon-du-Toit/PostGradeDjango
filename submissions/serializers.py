@@ -101,7 +101,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         )
 
         try:
-            enrollment = recognize_submission(
+            recognition_result = recognize_submission(
                 submission
             )
         except Exception:
@@ -109,10 +109,15 @@ class SubmissionSerializer(serializers.ModelSerializer):
                 "Automatic submission recognition failed for submission %s",
                 submission.id,
             )
-            enrollment = None
+            recognition_result = None
 
-        if enrollment is not None:
-            submission.enrollment = enrollment
+        if (
+            recognition_result is not None
+            and recognition_result.enrollment is not None
+        ):
+            submission.enrollment = (
+                recognition_result.enrollment
+            )
             submission.status = Submission.Status.MATCHED
         else:
             submission.status = (
@@ -129,16 +134,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return submission
 
     def update(self, instance, validated_data):
-        instance = super().update(instance, validated_data)
-
-        if instance.enrollment is not None:
-            instance.status = Submission.Status.MATCHED
-        else:
-            instance.status = Submission.Status.UPLOADED
-
-        instance.save(update_fields=["status"])
-
-        return instance
+        # Status changes go through Submission.record_status_change()
+        # so we do not silently reset status on generic edits.
+        return super().update(instance, validated_data)
 
     def validate_enrollment(self, enrollment):
         if enrollment is None:

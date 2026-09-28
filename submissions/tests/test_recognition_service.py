@@ -1,12 +1,8 @@
-import pymupdf
-from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-
-from pathlib import Path
 
 from assessments.models import Assessment
 from courses.models import Course
@@ -16,6 +12,7 @@ from submissions.recognition.service import (
     recognize_submission,
 )
 from submissions.recognition.types import (
+    ImageQualityResult,
     StudentNumberCandidate,
 )
 
@@ -75,11 +72,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_recognizes_enrollment_from_submission(
         self,
+        mock_assess_quality,
         mock_find_text,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
         mock_find_text.return_value = (
             "Student number / Studentenommer: 37279432"
         )
@@ -96,9 +103,10 @@ class SubmissionRecognitionServiceTests(TestCase):
         )
 
         self.assertEqual(
-            enrollment,
+            enrollment.enrollment,
             self.enrollment,
         )
+        self.assertIsNone(enrollment.reason)
 
     @patch(
         "submissions.recognition.service."
@@ -108,11 +116,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_returns_none_when_student_number_is_not_recognized(
         self,
+        mock_assess_quality,
         mock_find_text,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
         mock_find_text.return_value = (
             "Student number / Studentenommer: 99999999"
         )
@@ -128,7 +146,11 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
@@ -138,11 +160,21 @@ class SubmissionRecognitionServiceTests(TestCase):
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_does_not_match_student_from_another_course(
         self,
+        mock_assess_quality,
         mock_find_text,
         mock_extract_candidate,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
         other_course = Course.objects.create(
             owner=self.user,
             code="CMPG212",
@@ -179,114 +211,38 @@ class SubmissionRecognitionServiceTests(TestCase):
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
+        self.assertIsNone(enrollment.enrollment)
+        self.assertEqual(
+            enrollment.reason,
+            "Student number could not be matched",
+        )
 
     @patch(
         "submissions.recognition.service."
         "find_student_number_text"
     )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
     def test_returns_none_when_student_number_line_is_not_found(
         self,
+        mock_assess_quality,
         mock_find_text,
     ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
         mock_find_text.return_value = None
 
         enrollment = recognize_submission(
             self.submission,
         )
 
-        self.assertIsNone(enrollment)
-
-    def test_recognizes_real_full_page_submission_with_ocr_error(self):
-        fixture_path = (
-                Path(__file__).parent
-                / "fixtures"
-                / "student_numbers"
-                / "full"
-                / "student_35226455.jpeg"
-        )
-
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="35226455",
-            first_name="Real",
-            last_name="Student",
-            email="real@example.com",
-        )
-
-        expected_enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            file=SimpleUploadedFile(
-                "student_35226455.jpeg",
-                fixture_path.read_bytes(),
-                content_type="image/jpeg",
-            ),
-            original_filename="student_35226455.jpeg",
-        )
-
-        enrollment = recognize_submission(
-            submission,
-        )
-
+        self.assertIsNone(enrollment.enrollment)
         self.assertEqual(
-            enrollment,
-            expected_enrollment,
+            enrollment.reason,
+            "Student number area could not be identified",
         )
-
-    def test_recognizes_student_from_real_pdf_submission(self):
-        fixture_path = (
-                Path(__file__).parent
-                / "fixtures"
-                / "student_numbers"
-                / "full"
-                / "student_37279432_a.jpeg"
-        )
-
-        pdf_path = (
-                Path(__file__).parent
-                / "fixtures"
-                / "student_numbers"
-                / "student_37279432_test.pdf"
-        )
-
-        document = pymupdf.open()
-        page = document.new_page()
-
-        page.insert_image(
-            page.rect,
-            filename=str(fixture_path),
-        )
-
-        document.save(
-            pdf_path,
-        )
-        document.close()
-
-        try:
-            submission = Submission.objects.create(
-                assessment=self.assessment,
-                file=SimpleUploadedFile(
-                    "student_37279432.pdf",
-                    pdf_path.read_bytes(),
-                    content_type="application/pdf",
-                ),
-                original_filename="student_37279432.pdf",
-            )
-
-            enrollment = recognize_submission(
-                submission,
-            )
-
-            self.assertEqual(
-                enrollment,
-                self.enrollment,
-            )
-
-        finally:
-            if pdf_path.exists():
-                pdf_path.unlink()

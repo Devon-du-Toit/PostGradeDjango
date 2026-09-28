@@ -38,7 +38,8 @@ INSTALLED_APPS = [
     "courses",
     "students",
     "assessments",
-    "submissions"
+    "submissions",
+    "distribution",
 ]
 
 MIDDLEWARE = [
@@ -130,6 +131,17 @@ STATIC_URL = 'static/'
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 DEFAULT_FROM_EMAIL = "PostGrade <noreply@postgrade.local>"
+
+# Seconds before an SMTP connection gives up, so a stalled mail server
+# cannot block the mail worker.
+EMAIL_TIMEOUT = 30
+
+# "automatic": result emails are sent once a mark is saved.
+# "approval": result emails wait for lecturer approval before sending.
+RESULT_EMAIL_RELEASE_POLICY = os.getenv(
+    "RESULT_EMAIL_RELEASE_POLICY",
+    "automatic",
+)
 
 AUTH_USER_MODEL = "accounts.User"
 
