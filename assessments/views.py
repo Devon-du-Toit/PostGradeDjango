@@ -53,15 +53,22 @@ class AssessmentResultListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_assessment(self):
-        return get_object_or_404(
-            Assessment,
-            pk=self.kwargs["assessment_id"],
-            course__owner=self.request.user,
-        )
+        # Looked up once per request; get_queryset, the serializer
+        # context and perform_create all need it.
+        if not hasattr(self, "_assessment"):
+            self._assessment = get_object_or_404(
+                Assessment,
+                pk=self.kwargs["assessment_id"],
+                course__owner=self.request.user,
+            )
+        return self._assessment
 
     def get_queryset(self):
         return Result.objects.filter(
             assessment=self.get_assessment(),
+        ).select_related(
+            "assessment",
+            "enrollment__student",
         ).order_by("enrollment__student__student_number", "id")
 
     def get_serializer_context(self):
@@ -82,6 +89,9 @@ class ResultDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Result.objects.filter(
             assessment__course__owner=self.request.user,
+        ).select_related(
+            "assessment",
+            "enrollment__student",
         )
 
     def get_serializer_context(self):
