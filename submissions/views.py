@@ -14,6 +14,7 @@ from django.db import transaction
 from django.http import FileResponse, Http404
 
 from students.models import Enrollment
+from submissions.jobs import retry_recognition
 from submissions.verification import verify_submission
 
 
@@ -26,6 +27,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
+            "recognition_jobs",
         )
 
     def perform_create(self, serializer):
@@ -40,6 +42,7 @@ class SubmissionDetailView(generics.RetrieveUpdateAPIView):
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
+            "recognition_jobs",
         )
 
 class SubmissionMarkView(generics.GenericAPIView):
@@ -175,6 +178,7 @@ class SubmissionVerificationQueueView(
             ],
         ).prefetch_related(
             "recognition_attempts",
+            "recognition_jobs",
         ).order_by("created_at")
 
 class SubmissionRecognitionImageView(generics.GenericAPIView):
@@ -198,4 +202,38 @@ class SubmissionRecognitionImageView(generics.GenericAPIView):
         return FileResponse(
             attempt.region_image.open("rb"),
             content_type="image/png",
+        )
+
+
+class SubmissionRetryRecognitionView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        try:
+            submission = retry_recognition(
+                submission.pk,
+            )
+        except ValidationError as exc:
+            return Response(
+                {
+                    "detail": exc.message,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SubmissionSerializer(
+                submission,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_202_ACCEPTED,
         )

@@ -128,7 +128,17 @@ The Django development server will normally be available at:
 http://127.0.0.1:8000/
 ```
 
-### Run the mail worker
+### 8. Run the recognition worker
+
+Student-number recognition runs in a background worker. In a second terminal, with the same virtual environment active:
+
+```bash
+python manage.py run_recognition_worker
+```
+
+Without a running worker, uploaded submissions remain in the `processing` state. See [`DOCS/RECOGNITION_WORKER.md`](DOCS/RECOGNITION_WORKER.md) for details.
+
+### 9. Run the mail worker
 
 Result emails are sent by a background worker. In a separate terminal, with the same virtual environment active:
 

@@ -10,7 +10,10 @@ from courses.models import Course
 from distribution.dispatch import process_next_email
 from students.models import Enrollment, Student
 from submissions.models import Submission
+from submissions.jobs import process_next_job
+from submissions.models import RecognitionJob
 from submissions.recognition.types import RecognitionResult
+
 from django.core import mail
 
 
@@ -143,14 +146,7 @@ class SubmissionAPITests(TestCase):
 
         self.client.force_authenticate(user=self.user)
 
-    @patch(
-        "submissions.serializers.recognize_submission"
-    )
-    def test_upload_submission(
-            self,
-            mock_recognize_submission,
-    ):
-        mock_recognize_submission.return_value = None
+    def test_upload_submission(self):
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
@@ -188,6 +184,14 @@ class SubmissionAPITests(TestCase):
         )
         self.assertIsNone(
             submission.enrollment,
+        )
+        self.assertEqual(
+            submission.status,
+            Submission.Status.PROCESSING,
+        )
+        self.assertEqual(
+            submission.recognition_jobs.get().status,
+            RecognitionJob.Status.QUEUED,
         )
 
     def test_cannot_upload_to_another_users_assessment(self):
@@ -693,7 +697,7 @@ class SubmissionAPITests(TestCase):
         )
 
     @patch(
-        "submissions.serializers.recognize_submission"
+        "submissions.jobs.recognize_submission"
     )
     def test_upload_automatically_matches_submission(
         self,
@@ -736,6 +740,8 @@ class SubmissionAPITests(TestCase):
             status.HTTP_201_CREATED,
         )
 
+        process_next_job()
+
         submission = Submission.objects.get(
             id=response.data["id"],
         )
@@ -752,13 +758,16 @@ class SubmissionAPITests(TestCase):
 
 
     @patch(
-        "submissions.serializers.recognize_submission"
+        "submissions.jobs.recognize_submission"
     )
     def test_upload_needs_verification_when_recognition_fails(
         self,
         mock_recognize_submission,
     ):
-        mock_recognize_submission.return_value = None
+        mock_recognize_submission.return_value = RecognitionResult(
+            enrollment=None,
+            reason="Student number could not be matched",
+        )
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
@@ -780,6 +789,8 @@ class SubmissionAPITests(TestCase):
             status.HTTP_201_CREATED,
         )
 
+        process_next_job()
+
         submission = Submission.objects.get(
             id=response.data["id"],
         )
@@ -794,7 +805,7 @@ class SubmissionAPITests(TestCase):
         )
 
     @patch(
-        "submissions.serializers.recognize_submission"
+        "submissions.jobs.recognize_submission"
     )
     def test_upload_succeeds_when_recognition_raises_exception(
             self,
@@ -824,6 +835,8 @@ class SubmissionAPITests(TestCase):
             status.HTTP_201_CREATED,
         )
 
+        process_next_job()
+
         submission = Submission.objects.get(
             id=response.data["id"],
         )
@@ -834,7 +847,11 @@ class SubmissionAPITests(TestCase):
 
         self.assertEqual(
             submission.status,
-            Submission.Status.NEEDS_VERIFICATION
+            Submission.Status.PROCESSING,
+        )
+        self.assertIn(
+            "OCR failed",
+            submission.recognition_jobs.get().last_error,
         )
 
     def test_cannot_mark_matched_but_unverified_submission(self):
