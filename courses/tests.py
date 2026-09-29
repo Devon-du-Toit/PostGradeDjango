@@ -138,8 +138,8 @@ class CourseAPITests(TestCase):
         response = self.client.get("/api/courses/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["code"], "PHY101")
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["code"], "PHY101")
 
     def test_unauthenticated_user_cannot_list_courses(self):
         self.client.force_authenticate(user=None)
