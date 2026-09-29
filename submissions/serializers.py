@@ -65,14 +65,17 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return path
 
     def validate_file(self, value):
-        # The uploaded file is create-only. If the wrong file was
-        # uploaded, the supported path is to delete the submission
-        # (which now cleans up its file - see submissions/signals.py)
-        # and upload a new one.
-        if self.instance is not None:
+        # Replacing a submission's file is allowed, except once it
+        # has been marked - at that point a recorded grade exists
+        # against the current file/enrollment, and swapping the
+        # file out from under it would be misleading. This mirrors
+        # PR #19's policy so the two PRs don't disagree.
+        if (
+            self.instance is not None
+            and self.instance.status == Submission.Status.MARKED
+        ):
             raise serializers.ValidationError(
-                "The uploaded file cannot be replaced. Delete this "
-                "submission and upload a new one instead."
+                "The file of a marked submission cannot be replaced."
             )
 
         try:
@@ -134,9 +137,62 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return submission
 
     def update(self, instance, validated_data):
+        if "file" in validated_data:
+            return self.replace_file(instance, validated_data)
+
         # Status changes go through Submission.record_status_change()
         # so we do not silently reset status on generic edits.
         return super().update(instance, validated_data)
+
+    def replace_file(self, instance, validated_data):
+        # A new file invalidates any match made from the old one,
+        # so recognition runs again from scratch, same as create().
+        # The old file is only deleted once the new one is safely
+        # saved, so a failure here never leaves the submission with
+        # no file at all.
+        old_file = instance.file
+
+        uploaded_file = validated_data["file"]
+        validated_data["original_filename"] = uploaded_file.name
+        validated_data["enrollment"] = None
+
+        instance = super().update(instance, validated_data)
+
+        try:
+            recognition_result = recognize_submission(
+                instance
+            )
+        except Exception:
+            logger.exception(
+                "Automatic submission recognition failed for submission %s",
+                instance.id,
+            )
+            recognition_result = None
+
+        if (
+            recognition_result is not None
+            and recognition_result.enrollment is not None
+        ):
+            instance.enrollment = (
+                recognition_result.enrollment
+            )
+            instance.status = Submission.Status.MATCHED
+        else:
+            instance.status = (
+                Submission.Status.NEEDS_VERIFICATION
+            )
+
+        instance.save(
+            update_fields=[
+                "enrollment",
+                "status",
+            ]
+        )
+
+        if old_file:
+            old_file.storage.delete(old_file.name)
+
+        return instance
 
     def validate_enrollment(self, enrollment):
         if enrollment is None:

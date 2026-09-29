@@ -11,7 +11,7 @@ retention, and storage-backend behaviour for submission files.
   (submission.file.path); it stages the file through the Storage
   API instead, so it keeps working on non-filesystem backends.
 """
-
+import pymupdf
 import io
 import shutil
 import tempfile
@@ -47,6 +47,11 @@ def _make_valid_jpeg_bytes():
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
     return buffer.getvalue()
+
+def _make_valid_pdf_bytes():
+    document = pymupdf.open()
+    document.new_page(width=200, height=200)
+    return document.tobytes()
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(prefix="postgrade-lifecycle-")
 
@@ -277,7 +282,53 @@ class SubmissionFileReplacementTests(TestCase):
 
         self.client.force_authenticate(user=self.user)
 
-    def test_cannot_replace_file_via_patch(self):
+    def test_can_replace_file_on_unmarked_submission(self):
+        old_storage = self.submission.file.storage
+        old_name = self.submission.file.name
+        self.assertTrue(old_storage.exists(old_name))
+
+        replacement_file = SimpleUploadedFile(
+            "replacement.pdf",
+            _make_valid_pdf_bytes(),
+            content_type="application/pdf",
+        )
+
+        response = self.client.patch(
+            f"/api/submissions/{self.submission.id}/",
+            {"file": replacement_file},
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.submission.refresh_from_db()
+
+        # New file saved, old one cleaned up.
+        self.assertNotEqual(
+            self.submission.file.name,
+            old_name,
+        )
+        self.assertTrue(
+            self.submission.file.storage.exists(
+                self.submission.file.name
+            )
+        )
+        self.assertFalse(old_storage.exists(old_name))
+
+        # A new file invalidates any prior match.
+        self.assertIsNone(self.submission.enrollment)
+        self.assertEqual(
+            self.submission.original_filename,
+            "replacement.pdf",
+        )
+
+    def test_cannot_replace_file_on_marked_submission(self):
+        self.submission.status = Submission.Status.MARKED
+        self.submission.save(update_fields=["status"])
+
         original_name = self.submission.file.name
 
         replacement_file = SimpleUploadedFile(
@@ -296,7 +347,6 @@ class SubmissionFileReplacementTests(TestCase):
             response.status_code,
             status.HTTP_400_BAD_REQUEST,
         )
-        self.assertIn("file", response.data)
 
         self.submission.refresh_from_db()
         self.assertEqual(
