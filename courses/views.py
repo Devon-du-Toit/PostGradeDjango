@@ -8,6 +8,8 @@ from courses.serializers import CourseSerializer
 class CourseListCreateView(generics.ListCreateAPIView):
     serializer_class = CourseSerializer
     permission_classes = [IsAuthenticated]
+    filterset_fields = ["year", "semester"]
+    search_fields = ["code", "name"]
 
     # user only gets their own courses, newest term first
     def get_queryset(self):

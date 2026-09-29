@@ -19,6 +19,7 @@ from distribution.services import schedule_result_email
 class CourseAssessmentListCreateView(generics.ListCreateAPIView):
     serializer_class = AssessmentSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = ["name"]
 
     def get_course(self):
         return get_object_or_404(
@@ -51,6 +52,11 @@ class AssessmentDetailView(generics.RetrieveUpdateDestroyAPIView):
 class AssessmentResultListCreateView(generics.ListCreateAPIView):
     serializer_class = ResultSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = [
+        "enrollment__student__student_number",
+        "enrollment__student__first_name",
+        "enrollment__student__last_name",
+    ]
 
     def get_assessment(self):
         # Looked up once per request; get_queryset, the serializer
