@@ -1,9 +1,10 @@
+from io import BytesIO
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pymupdf
-
+from PIL import Image
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -83,3 +84,13 @@ def recognition_image(image_path):
             )
     finally:
         document.close() # closes the PDF
+
+
+def crop_image(image_path, box):
+    with Image.open(image_path) as image:
+        cropped = image.crop(box).convert("RGB")
+
+    buffer = BytesIO()
+    cropped.save(buffer, format="PNG")
+
+    return buffer.getvalue()

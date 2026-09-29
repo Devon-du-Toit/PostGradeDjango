@@ -158,3 +158,131 @@ class SubmissionAudit(models.Model):
         return f"Audit #{self.pk} for submission {self.submission_id}"
 
 
+class RecognitionAttempt(models.Model):
+    class Method(models.TextChoices):
+        OCR = "ocr", "OCR"
+        BUBBLE = "bubble", "Bubble"
+    
+    class Outcome(models.TextChoices):
+        MATCHED = "matched", "Matched"
+        NO_MATCH = "no_match", "No match"
+        NO_CANDIDATE = "no_candidate", "No candidate"
+        REGION_NOT_FOUND = (
+            "region_not_found",
+            "Region not found",
+        )
+        IMAGE_UNUSABLE = "image_unusable", "Image unusable"
+        ERROR = "error", "Error"
+
+    class ConfidenceType(models.TextChoices):
+        NONE = "none", "None"
+        OCR_SCORE = "ocr_score", "OCR score"
+        BUBBLE_MARGIN = "bubble_margin", "Bubble margin"
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="recognition_attempts",
+    )
+
+    method = models.CharField(
+        max_length=20,
+        choices=Method.choices,
+    )
+
+    outcome = models.CharField(
+        max_length=20,
+        choices=Outcome.choices,
+    )
+
+    processing_version = models.CharField(
+        max_length=50,
+    )
+
+    raw_text = models.TextField(
+        blank=True,
+    )
+
+    # First candidate only. Kept so existing API clients do not break;
+    # raw_candidates holds every candidate matching evaluated.
+    raw_candidate = models.CharField(
+        max_length=50,
+        blank=True,
+    )
+
+    # [{"value": "37279432", "confidence": 0.97}, ...]
+    raw_candidates = models.JSONField(
+        default=list,
+        blank=True,
+    )
+
+    suggested_enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+
+    suggested_student_number = models.CharField(
+        max_length=50,
+        blank=True,
+    )
+
+    confidence = models.FloatField(
+        null=True,
+        blank=True,
+    )
+
+    confidence_type = models.CharField(
+        max_length=20,
+        choices=ConfidenceType.choices,
+        default=ConfidenceType.NONE,
+    )
+
+    column_ambiguity = models.JSONField(
+        default=list,
+        blank=True,
+    )
+
+    region = models.JSONField(
+        null=True,
+        blank=True,
+    )
+
+    region_image = models.FileField(
+        upload_to="recognition/%Y/%m/%d/",
+        blank=True,
+    )
+
+    quality_issues = models.JSONField(
+        default=list,
+        blank=True,
+    )
+
+    # Set when outcome is "error". The type is safe to expose; the
+    # message can contain server paths and stays internal.
+    error_type = models.CharField(
+        max_length=100,
+        blank=True,
+    )
+
+    error_message = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["submission", "-created_at"],
+                name="recognition_latest_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.submission} - {self.method} - {self.outcome}"
