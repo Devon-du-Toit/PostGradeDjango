@@ -9,9 +9,11 @@ class CourseListCreateView(generics.ListCreateAPIView):
     serializer_class = CourseSerializer
     permission_classes = [IsAuthenticated]
 
-    # user only gets their own courses
+    # user only gets their own courses, newest term first
     def get_queryset(self):
-        return Course.objects.filter(owner=self.request.user)
+        return Course.objects.filter(
+            owner=self.request.user,
+        ).order_by("-year", "-semester", "code", "id")
 
     # course ownership comes from the authenticated user
     def perform_create(self, serializer):

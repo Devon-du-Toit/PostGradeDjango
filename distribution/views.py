@@ -35,7 +35,7 @@ class AssessmentResultEmailListView(generics.ListAPIView):
 
         return owned_emails(self.request.user).filter(
             result__assessment=assessment,
-        )
+        ).order_by("-created_at", "-id")
 
 
 class ResultEmailDetailView(generics.RetrieveAPIView):

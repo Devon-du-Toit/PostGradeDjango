@@ -29,7 +29,10 @@ class CourseAssessmentListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         course = self.get_course()
-        return Assessment.objects.filter(course=course)
+        # undated assessments sort last
+        return Assessment.objects.filter(
+            course=course,
+        ).order_by("date", "name", "id")
 
     def perform_create(self, serializer):
         serializer.save(course=self.get_course())
@@ -59,7 +62,7 @@ class AssessmentResultListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Result.objects.filter(
             assessment=self.get_assessment(),
-        )
+        ).order_by("enrollment__student__student_number", "id")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

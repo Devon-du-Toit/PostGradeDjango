@@ -23,7 +23,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
-        )
+        ).order_by("-created_at", "-id")
 
     def perform_create(self, serializer):
         serializer.save()
@@ -168,4 +168,4 @@ class SubmissionVerificationQueueView(
                 Submission.Status.NEEDS_VERIFICATION,
                 Submission.Status.MATCHED,
             ],
-        ).order_by("created_at")
+        ).order_by("created_at", "id")

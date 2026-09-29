@@ -68,7 +68,9 @@ class StudentListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Student.objects.filter(owner=self.request.user)
+        return Student.objects.filter(
+            owner=self.request.user,
+        ).order_by("student_number", "id")
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -90,7 +92,7 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
         return Enrollment.objects.filter(
             course__owner=self.request.user,
             student__owner=self.request.user,
-        )
+        ).order_by("course_id", "student__student_number", "id")
 
 
 class CourseStudentListView(generics.ListAPIView):
@@ -102,7 +104,7 @@ class CourseStudentListView(generics.ListAPIView):
             owner=self.request.user,
             enrollments__course_id=self.kwargs["course_id"],
             enrollments__course__owner=self.request.user,
-        )
+        ).order_by("student_number", "id")
 
 
 class StudentCSVImportView(generics.GenericAPIView):
