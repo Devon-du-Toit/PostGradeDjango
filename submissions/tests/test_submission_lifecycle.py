@@ -12,10 +12,13 @@ retention, and storage-backend behaviour for submission files.
   API instead, so it keeps working on non-filesystem backends.
 """
 
+import io
 import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
+
+from PIL import Image, ImageDraw
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -29,6 +32,21 @@ from submissions.models import Submission
 from submissions.recognition.service import recognize_submission
 from submissions.recognition.types import StudentNumberCandidate
 
+def _make_valid_jpeg_bytes():
+    # A flat/blank image fails quality.py's checks (no contrast,
+    # no sharp edges), so this draws a simple grid to look enough
+    # like a real scanned page to pass quality gating. Only OCR
+    # itself is mocked in this test.
+    image = Image.new("RGB", (600, 600), color=(220, 220, 220))
+    draw = ImageDraw.Draw(image)
+    for y in range(30, 570, 25):
+        draw.line([(30, y), (570, y)], fill=(0, 0, 0), width=3)
+    for x in range(30, 570, 35):
+        draw.line([(x, 30), (x, 570)], fill=(0, 0, 0), width=2)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(prefix="postgrade-lifecycle-")
 
@@ -347,7 +365,7 @@ class SubmissionRecognitionStorageAgnosticTests(TestCase):
             assessment=self.assessment,
             file=SimpleUploadedFile(
                 "paper.jpg",
-                b"fake image content",
+                _make_valid_jpeg_bytes(),
                 content_type="image/jpeg",
             ),
             original_filename="paper.jpg",
