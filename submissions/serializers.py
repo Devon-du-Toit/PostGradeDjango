@@ -1,16 +1,83 @@
-import logging
-
+from django.db import transaction
+from django.urls import reverse
 from rest_framework import serializers
 
-from submissions.models import Submission
-
-from submissions.recognition.service import (
-    recognize_submission,
+from submissions.jobs import (
+    cancel_active_jobs,
+    enqueue_recognition,
+)
+from submissions.models import (
+    RecognitionAttempt,
+    RecognitionJob,
+    Submission,
 )
 
-logger = logging.getLogger(__name__)
+
+class RecognitionAttemptSerializer(serializers.ModelSerializer):
+    region_image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = RecognitionAttempt
+        fields = [
+            "id",
+            "method",
+            "outcome",
+            "processing_version",
+            "raw_text",
+            "raw_candidate",
+            "raw_candidates",
+            "suggested_enrollment",
+            "suggested_student_number",
+            "confidence",
+            "confidence_type",
+            "column_ambiguity",
+            "region",
+            "region_image_url",
+            "quality_issues",
+            "error_type",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_region_image_url(self, attempt):
+        if not attempt.region_image:
+            return None
+
+        return reverse(
+            "submission-recognition-image",
+            kwargs={"pk": attempt.submission_id},
+        )
+
+
+class RecognitionJobSerializer(serializers.ModelSerializer):
+    failure_reason = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecognitionJob
+        fields = [
+            "id",
+            "status",
+            "attempts",
+            "max_attempts",
+            "run_after",
+            "failure_reason",
+            "created_at",
+            "started_at",
+            "finished_at",
+        ]
+        read_only_fields = fields
+
+    def get_failure_reason(self, job):
+        # Exception type only; the full text may contain server paths.
+        if not job.last_error:
+            return None
+
+        return job.last_error.split(":", 1)[0]
+
 
 class SubmissionSerializer(serializers.ModelSerializer):
+    recognition = serializers.SerializerMethodField()
+    recognition_job = serializers.SerializerMethodField()
     class Meta:
         model = Submission
         fields = [
@@ -20,6 +87,8 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "file",
             "original_filename",
             "status",
+            "recognition",
+            "recognition_job",
             "created_at",
             "updated_at",
             "version",
@@ -31,6 +100,37 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_recognition_job(self, submission):
+        jobs = submission.recognition_jobs.all()
+
+        if not jobs:
+            return None
+
+        return RecognitionJobSerializer(
+            jobs[0],
+        ).data
+
+    def get_recognition(self, submission):
+        attempts = submission.recognition_attempts.all()
+
+        if not attempts:
+            return None
+
+        return RecognitionAttemptSerializer(
+            attempts[0],
+        ).data
+
+    def validate_file(self, file):
+        if (
+            self.instance is not None
+            and self.instance.status == Submission.Status.MARKED
+        ):
+            raise serializers.ValidationError(
+                "The file of a marked submission cannot be replaced."
+            )
+
+        return file
 
     def validate_version(self, value):
         instance = self.instance
@@ -56,39 +156,20 @@ class SubmissionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         uploaded_file = validated_data["file"]
         validated_data["original_filename"] = uploaded_file.name
+        validated_data["status"] = Submission.Status.PROCESSING
 
-        submission = super().create(
-            validated_data
-        )
-
-        try:
-            enrollment = recognize_submission(
-                submission
+        with transaction.atomic():
+            submission = super().create(
+                validated_data
             )
-        except Exception:
-            logger.exception(
-                "Automatic submission recognition failed for submission %s",
-                submission.id,
-            )
-            enrollment = None
-
-        if enrollment is not None:
-            submission.record_status_change(
-                actor=None,
-                new_status=Submission.Status.MATCHED,
-                reason="Automatic recognition matched",
-                new_enrollment=enrollment,
-            )
-        else:
-            submission.record_status_change(
-                actor=None,
-                new_status=Submission.Status.NEEDS_VERIFICATION,
-                reason="Automatic recognition could not match",
-            )
+            enqueue_recognition(submission)
 
         return submission
 
     def update(self, instance, validated_data):
+        if "file" in validated_data:
+            return self.replace_file(instance, validated_data)
+
         # Status changes go through Submission.record_status_change()
         # so we do not silently reset status on generic edits.
         #
@@ -114,6 +195,19 @@ class SubmissionSerializer(serializers.ModelSerializer):
         instance = super().update(instance, validated_data)
         instance.version = instance.version + 1
         instance.save(update_fields=["version", "updated_at"])
+        return instance
+
+    def replace_file(self, instance, validated_data):
+        # A new file invalidates any match made from the old one.
+        validated_data["original_filename"] = validated_data["file"].name
+        validated_data["enrollment"] = None
+        validated_data["status"] = Submission.Status.PROCESSING
+
+        with transaction.atomic():
+            cancel_active_jobs(instance)
+            instance = super().update(instance, validated_data)
+            enqueue_recognition(instance)
+
         return instance
 
     def validate_enrollment(self, enrollment):
@@ -150,6 +244,23 @@ class SubmissionSerializer(serializers.ModelSerializer):
                     "enrollment": (
                         "Enrollment must belong to the same course "
                         "as the assessment."
+                    )
+                }
+            )
+
+        # A running recognition job would overwrite a manual choice made now,
+        # because generic edits no longer move the status off "processing".
+        if (
+            self.instance is not None
+            and "enrollment" in attrs
+            and "file" not in attrs
+            and self.instance.status == Submission.Status.PROCESSING
+        ):
+            raise serializers.ValidationError(
+                {
+                    "enrollment": (
+                        "Recognition is still running. Wait for it to "
+                        "finish, or use verify."
                     )
                 }
             )

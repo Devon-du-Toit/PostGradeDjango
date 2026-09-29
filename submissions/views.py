@@ -4,13 +4,17 @@ from rest_framework.response import Response
 
 from assessments.models import Result
 from assessments.serializers import ResultSerializer
+from distribution.serializers import ResultEmailSerializer
+from distribution.services import schedule_result_email
 from submissions.models import Submission
 from submissions.serializers import SubmissionSerializer
-from submissions.emailing import send_result_email
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.http import FileResponse, Http404
 
 from students.models import Enrollment
+from submissions.jobs import retry_recognition
 from submissions.verification import verify_submission
 
 
@@ -21,6 +25,9 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
+        ).prefetch_related(
+            "recognition_attempts",
+            "recognition_jobs",
         )
 
     def perform_create(self, serializer):
@@ -33,61 +40,69 @@ class SubmissionDetailView(generics.RetrieveUpdateAPIView):
     def get_queryset(self):
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
+        ).prefetch_related(
+            "recognition_attempts",
+            "recognition_jobs",
         )
 
 class SubmissionMarkView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        submission = generics.get_object_or_404(
-            Submission.objects.filter(
-                assessment__course__owner=request.user,
-            ),
-            pk=pk,
-        )
-
-        if submission.status != Submission.Status.VERIFIED:
-            return Response(
-                {
-                    "detail": (
-                        "Submission must be verified "
-                        "before entering a mark."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+        # Mark, status and email record commit together: a mail problem
+        # can never undo or lose a saved mark.
+        with transaction.atomic():
+            # Locked so a repeated request waits, then sees "marked".
+            submission = generics.get_object_or_404(
+                Submission.objects.select_for_update().filter(
+                    assessment__course__owner=request.user,
+                ),
+                pk=pk,
             )
 
-        existing_result = Result.objects.filter(
-            assessment=submission.assessment,
-            enrollment=submission.enrollment,
-        ).first()
+            if submission.status != Submission.Status.VERIFIED:
+                return Response(
+                    {
+                        "detail": (
+                            "Submission must be verified "
+                            "before entering a mark."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        serializer = ResultSerializer(
-            existing_result,
-            data={
-                "enrollment": submission.enrollment_id,
-                "mark": request.data.get("mark"),
-            },
-            context={
-                "request": request,
-                "assessment": submission.assessment,
-            },
-        )
+            existing_result = Result.objects.select_for_update().filter(
+                assessment=submission.assessment,
+                enrollment=submission.enrollment,
+            ).first()
 
-        serializer.is_valid(raise_exception=True)
-        result = serializer.save(
-            assessment=submission.assessment,
-        )
+            serializer = ResultSerializer(
+                existing_result,
+                data={
+                    "enrollment": submission.enrollment_id,
+                    "mark": request.data.get("mark"),
+                },
+                context={
+                    "request": request,
+                    "assessment": submission.assessment,
+                },
+            )
 
-        submission.record_status_change(
-            actor=request.user,
-            new_status=Submission.Status.MARKED,
-            reason="Result created",
-        )
-        send_result_email(result)
+            serializer.is_valid(raise_exception=True)
+            result = serializer.save(
+                assessment=submission.assessment,
+            )
+
+            submission.status = Submission.Status.MARKED
+            submission.save(update_fields=["status"])
+
+            email = schedule_result_email(result)
 
         return Response(
-            ResultSerializer(result).data,
+            {
+                **ResultSerializer(result).data,
+                "email_delivery": ResultEmailSerializer(email).data,
+            },
             status=(
                 status.HTTP_200_OK
                 if existing_result
@@ -162,4 +177,64 @@ class SubmissionVerificationQueueView(
                 Submission.Status.NEEDS_VERIFICATION,
                 Submission.Status.MATCHED,
             ],
+        ).prefetch_related(
+            "recognition_attempts",
+            "recognition_jobs",
         ).order_by("created_at")
+
+class SubmissionRecognitionImageView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        attempt = submission.recognition_attempts.first()
+
+        if attempt is None or not attempt.region_image:
+            raise Http404(
+                "No recognition image for this submission."
+            )
+
+        return FileResponse(
+            attempt.region_image.open("rb"),
+            content_type="image/png",
+        )
+
+
+class SubmissionRetryRecognitionView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        try:
+            submission = retry_recognition(
+                submission.pk,
+            )
+        except ValidationError as exc:
+            return Response(
+                {
+                    "detail": exc.message,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SubmissionSerializer(
+                submission,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_202_ACCEPTED,
+        )
