@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from assessments.models import Assessment
+from distribution.filters import ResultEmailFilter
 from distribution.models import ResultEmail
 from distribution.serializers import ResultEmailSerializer
 from distribution.services import (
@@ -25,6 +26,13 @@ def owned_emails(user):
 class AssessmentResultEmailListView(generics.ListAPIView):
     serializer_class = ResultEmailSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = ResultEmailFilter
+    search_fields = [
+        "result__enrollment__student__student_number",
+        "result__enrollment__student__first_name",
+        "result__enrollment__student__last_name",
+        "recipient",
+    ]
 
     def get_queryset(self):
         assessment = get_object_or_404(
