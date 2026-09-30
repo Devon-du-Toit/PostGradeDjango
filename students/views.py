@@ -162,7 +162,8 @@ class StudentCSVImportView(generics.GenericAPIView):
                             "first_name": row["first_name"],
                             "last_name": row["last_name"],
                             "email": row["email"],
-                        }
+                        },
+                        context={"request": request},
                     )
 
                     if not serializer.is_valid():
