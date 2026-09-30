@@ -21,6 +21,26 @@ class StudentSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_student_number(self, student_number):
+        # The owner comes from the request, so DRF cannot enforce
+        # unique_student_number_per_owner on its own; without this check a
+        # duplicate reaches the database and the request fails with a 500.
+        request = self.context["request"]
+
+        duplicates = Student.objects.filter(
+            owner=request.user,
+            student_number=student_number,
+        )
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+
+        if duplicates.exists():
+            raise serializers.ValidationError(
+                "You already have a student with this student number."
+            )
+
+        return student_number
+
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
