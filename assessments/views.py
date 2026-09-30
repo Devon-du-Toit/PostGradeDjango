@@ -1,5 +1,9 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
+#what I addded
+from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
+
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +16,7 @@ from assessments.services import (
     calculate_course_grade,
 )
 from courses.models import Course
+from .services import assessment_progress
 
 
 class CourseAssessmentListCreateView(generics.ListCreateAPIView):
@@ -172,3 +177,18 @@ class AssessmentStatisticsView(APIView):
                 **statistics,
             }
         )
+
+class SummaryQuerySerializer(serializers.Serializer):
+    course = serializers.IntegerField(required=False, min_value=1)
+
+
+class AssessmentProgressView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = SummaryQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        course_id = query.validated_data.get("course")
+        if course_id and not Course.objects.filter(pk=course_id, owner=request.user).exists():
+            raise ValidationError({"course": ["Course not found."]})
+        return Response(assessment_progress(request.user, course_id))

@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     # PostGrade apps
     "accounts",
     "rest_framework",
+    "django_filters",
     "corsheaders",
     "courses",
     "students",
@@ -137,6 +138,11 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+     "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
 }
 
 CORS_ALLOWED_ORIGINS = [

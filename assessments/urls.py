@@ -1,5 +1,4 @@
 from django.urls import path
-
 from assessments.views import (
     AssessmentDetailView,
     AssessmentResultListCreateView,
@@ -9,7 +8,10 @@ from assessments.views import (
     AssessmentStatisticsView,
 )
 
+from .views import AssessmentProgressView
+
 urlpatterns = [
+    path("progress/", AssessmentProgressView.as_view(), name="assessment-progress"),
     path(
         "courses/<int:course_id>/assessments/",
         CourseAssessmentListCreateView.as_view(),
