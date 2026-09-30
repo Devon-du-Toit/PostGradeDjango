@@ -221,6 +221,33 @@ SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0"))
 SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W021"]
 
 
+# Logging
+# Everything goes to stdout, where the hosting platform collects it. JSON in
+# production (one searchable object per line), readable text in development.
+# Log IDs, never names, student numbers, email addresses or file contents.
+
+LOG_FORMAT = os.getenv("LOG_FORMAT", "text" if DEBUG else "json")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {"()": "config.log_format.JsonFormatter"},
+        "text": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": LOG_FORMAT,
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": os.getenv("LOG_LEVEL", "INFO"),
+    },
+}
+
+
 # Submission file validation limits.
 # A submission is one student's whole marked script (returned to the
 # student), so several pages are allowed; recognition reads page 1.

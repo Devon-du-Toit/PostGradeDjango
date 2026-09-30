@@ -17,7 +17,9 @@ def delete_file_after_commit(storage, name, owner):
         try:
             storage.delete(name)
         except Exception:
-            logger.exception("Failed to delete stored file %s for %s", name, owner)
+            # The stored name can contain the uploaded filename (often a
+            # student number), so only the owning record is logged.
+            logger.exception("Failed to delete stored file for %s", owner)
 
     transaction.on_commit(delete)
 
