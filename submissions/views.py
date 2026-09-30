@@ -17,8 +17,10 @@ from submissions.serializers import SubmissionSerializer
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.http import FileResponse, Http404
 
 from students.models import Enrollment
+from submissions.jobs import retry_recognition
 from submissions.verification import verify_submission
 
 
@@ -31,6 +33,9 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
+        ).prefetch_related(
+            "recognition_attempts",
+            "recognition_jobs",
         ).order_by("-created_at", "-id")
 
     def perform_create(self, serializer):
@@ -43,6 +48,9 @@ class SubmissionDetailView(generics.RetrieveUpdateAPIView):
     def get_queryset(self):
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
+        ).prefetch_related(
+            "recognition_attempts",
+            "recognition_jobs",
         )
 
 class SubmissionMarkView(generics.GenericAPIView):
@@ -175,4 +183,65 @@ class SubmissionVerificationQueueView(
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
             status__in=VERIFICATION_QUEUE_STATUSES,
+        ).prefetch_related(
+            "recognition_attempts",
+            "recognition_jobs",
         ).order_by("created_at", "id")
+
+class SubmissionRecognitionImageView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        attempt = submission.recognition_attempts.first()
+
+        if attempt is None or not attempt.region_image:
+            raise Http404(
+                "No recognition image for this submission."
+            )
+
+        return FileResponse(
+            attempt.region_image.open("rb"),
+            content_type="image/png",
+        )
+
+
+class SubmissionRetryRecognitionView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        submission = generics.get_object_or_404(
+            Submission.objects.filter(
+                assessment__course__owner=request.user,
+            ),
+            pk=pk,
+        )
+
+        try:
+            submission = retry_recognition(
+                submission.pk,
+            )
+        except ValidationError as exc:
+            return Response(
+                {
+                    "detail": exc.message,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SubmissionSerializer(
+                submission,
+                context={
+                    "request": request,
+                },
+            ).data,
+            status=status.HTTP_202_ACCEPTED,
+        )
+

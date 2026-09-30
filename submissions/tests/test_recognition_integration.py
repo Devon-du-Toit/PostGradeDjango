@@ -1,20 +1,23 @@
 import pymupdf
+from io import BytesIO
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from PIL import Image
 
 from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
-from submissions.models import Submission
+from submissions.models import RecognitionAttempt, Submission
 from submissions.recognition.service import (
     recognize_submission,
 )
+from submissions.tests.helpers import PNG_SIGNATURE, TemporaryMediaMixin
 
 
-class RecognitionIntegrationTests(TestCase):
+class RecognitionIntegrationTests(TemporaryMediaMixin, TestCase):
     def setUp(self):
         User = get_user_model()
 
@@ -83,14 +86,29 @@ class RecognitionIntegrationTests(TestCase):
             original_filename="student_35226455.jpeg",
         )
 
-        enrollment = recognize_submission(
+        result = recognize_submission(
             submission,
         )
 
         self.assertEqual(
-            enrollment,
+            result.enrollment,
             expected_enrollment,
         )
+
+        # The stored crop of the student-number region is a real PNG.
+        attempt = RecognitionAttempt.objects.get(submission=submission)
+
+        with attempt.region_image.open("rb") as stored:
+            content = stored.read()
+
+        self.assertTrue(content.startswith(PNG_SIGNATURE))
+
+        with Image.open(BytesIO(content)) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(
+                image.size,
+                (attempt.region["width"], attempt.region["height"]),
+            )
 
     def test_recognizes_student_from_real_pdf_submission(self):
         fixture_path = (
@@ -132,12 +150,12 @@ class RecognitionIntegrationTests(TestCase):
                 original_filename="student_37279432.pdf",
             )
 
-            enrollment = recognize_submission(
+            result = recognize_submission(
                 submission,
             )
 
             self.assertEqual(
-                enrollment,
+                result.enrollment,
                 self.enrollment,
             )
 

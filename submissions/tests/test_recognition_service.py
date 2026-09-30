@@ -7,17 +7,29 @@ from django.test import TestCase
 from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
-from submissions.models import Submission
+from submissions.models import RecognitionAttempt, Submission
 from submissions.recognition.service import (
     recognize_submission,
 )
 from submissions.recognition.types import (
     ImageQualityResult,
     StudentNumberCandidate,
+    StudentNumberRegion,
 )
+from submissions.tests.helpers import TemporaryMediaMixin
 
 
-class SubmissionRecognitionServiceTests(TestCase):
+def region_for(text):
+    return StudentNumberRegion(
+        text=text,
+        confidence=0.95,
+        box=(0, 0, 10, 10),
+        image_width=100,
+        image_height=100,
+    )
+
+
+class SubmissionRecognitionServiceTests(TemporaryMediaMixin, TestCase):
     def setUp(self):
         User = get_user_model()
 
@@ -70,7 +82,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     )
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     @patch(
         "submissions.recognition.service."
@@ -79,7 +91,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     def test_recognizes_enrollment_from_submission(
         self,
         mock_assess_quality,
-        mock_find_text,
+        mock_locate,
         mock_extract_candidate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
@@ -87,7 +99,7 @@ class SubmissionRecognitionServiceTests(TestCase):
             reason=None
         )
 
-        mock_find_text.return_value = (
+        mock_locate.return_value = region_for(
             "Student number / Studentenommer: 37279432"
         )
 
@@ -114,7 +126,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     )
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     @patch(
         "submissions.recognition.service."
@@ -123,7 +135,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     def test_returns_none_when_student_number_is_not_recognized(
         self,
         mock_assess_quality,
-        mock_find_text,
+        mock_locate,
         mock_extract_candidate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
@@ -131,7 +143,7 @@ class SubmissionRecognitionServiceTests(TestCase):
             reason=None
         )
 
-        mock_find_text.return_value = (
+        mock_locate.return_value = region_for(
             "Student number / Studentenommer: 99999999"
         )
 
@@ -158,7 +170,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     )
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     @patch(
         "submissions.recognition.service."
@@ -167,7 +179,7 @@ class SubmissionRecognitionServiceTests(TestCase):
     def test_does_not_match_student_from_another_course(
         self,
         mock_assess_quality,
-        mock_find_text,
+        mock_locate,
         mock_extract_candidate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
@@ -196,7 +208,7 @@ class SubmissionRecognitionServiceTests(TestCase):
             student=other_student,
         )
 
-        mock_find_text.return_value = (
+        mock_locate.return_value = region_for(
             "Student number / Studentenommer: 12345678"
         )
 
@@ -219,7 +231,7 @@ class SubmissionRecognitionServiceTests(TestCase):
 
     @patch(
         "submissions.recognition.service."
-        "find_student_number_text"
+        "locate_student_number"
     )
     @patch(
         "submissions.recognition.service."
@@ -228,14 +240,14 @@ class SubmissionRecognitionServiceTests(TestCase):
     def test_returns_none_when_student_number_line_is_not_found(
         self,
         mock_assess_quality,
-        mock_find_text,
+        mock_locate,
     ):
         mock_assess_quality.return_value = ImageQualityResult(
             usable=True,
             reason=None
         )
 
-        mock_find_text.return_value = None
+        mock_locate.return_value = None
 
         enrollment = recognize_submission(
             self.submission,
@@ -245,4 +257,114 @@ class SubmissionRecognitionServiceTests(TestCase):
         self.assertEqual(
             enrollment.reason,
             "Student number area could not be identified",
+        )
+
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
+    def test_stops_recognition_when_image_quality_is_poor(
+        self,
+        mock_assess_quality,
+    ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=False,
+            reason="Image is too blurry",
+        )
+
+        result = recognize_submission(
+            self.submission
+        )
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
+        )
+
+        self.assertIsNone(result.enrollment)
+        self.assertEqual(result.reason, "Image is too blurry")
+        self.assertEqual(
+            attempt.outcome,
+            RecognitionAttempt.Outcome.IMAGE_UNUSABLE,
+        )
+        self.assertEqual(attempt.quality_issues, ["Image is too blurry"])
+
+    @patch(
+        "submissions.recognition.service."
+        "locate_student_number"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
+    def test_error_attempt_records_error_details(
+        self,
+        mock_assess_quality,
+        mock_locate,
+    ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
+        mock_locate.side_effect = RuntimeError("OCR failed")
+
+        with self.assertRaises(RuntimeError):
+            recognize_submission(self.submission)
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
+        )
+
+        self.assertEqual(
+            attempt.outcome,
+            RecognitionAttempt.Outcome.ERROR,
+        )
+        self.assertEqual(attempt.error_type, "RuntimeError")
+        self.assertEqual(attempt.error_message, "OCR failed")
+
+    @patch(
+        "submissions.recognition.service."
+        "extract_student_number_candidate"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "locate_student_number"
+    )
+    @patch(
+        "submissions.recognition.service."
+        "assess_image_quality"
+    )
+    def test_attempt_records_every_candidate(
+        self,
+        mock_assess_quality,
+        mock_locate,
+        mock_extract_candidate,
+    ):
+        mock_assess_quality.return_value = ImageQualityResult(
+            usable=True,
+            reason=None
+        )
+
+        mock_locate.return_value = region_for(
+            "Student number / Studentenommer: 37279432"
+        )
+
+        mock_extract_candidate.return_value = [
+            StudentNumberCandidate(value="37279432", confidence=0.95),
+            StudentNumberCandidate(value="37279433", confidence=0.40),
+        ]
+
+        recognize_submission(self.submission)
+
+        attempt = RecognitionAttempt.objects.get(
+            submission=self.submission,
+        )
+
+        self.assertEqual(attempt.raw_candidate, "37279432")
+        self.assertEqual(
+            attempt.raw_candidates,
+            [
+                {"value": "37279432", "confidence": 0.95},
+                {"value": "37279433", "confidence": 0.40},
+            ],
         )
