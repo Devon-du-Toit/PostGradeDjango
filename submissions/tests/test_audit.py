@@ -1,9 +1,11 @@
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
+from students.models import Enrollment, Student
 from submissions.models import Submission, SubmissionAudit
 
 
@@ -86,6 +88,54 @@ class SubmissionAuditTests(TestCase):
                 new_status=Submission.Status.VERIFIED,
                 reason="illegal jump",
             )
+
+    def _enrollment(self):
+        student = Student.objects.create(
+            owner=self.user,
+            student_number="12345678",
+            first_name="Alice",
+            last_name="Smith",
+            email="alice@example.com",
+        )
+        return Enrollment.objects.create(course=self.course, student=student)
+
+    def test_failed_recognition_can_be_verified_by_hand(self):
+        submission = self._make_submission("failed.pdf")
+        Submission.objects.filter(pk=submission.pk).update(
+            status=Submission.Status.RECOGNITION_FAILED,
+        )
+        api_client = APIClient()
+        api_client.force_authenticate(user=self.user)
+
+        response = api_client.post(
+            f"/api/submissions/{submission.id}/verify/",
+            {"enrollment": self._enrollment().id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, Submission.Status.VERIFIED)
+        self.assertEqual(
+            submission.audit_entries.get().previous_status,
+            Submission.Status.RECOGNITION_FAILED,
+        )
+
+    def test_illegal_verify_returns_400_not_500(self):
+        submission = self._make_submission("uploaded.pdf")
+        api_client = APIClient()
+        api_client.force_authenticate(user=self.user)
+
+        response = api_client.post(
+            f"/api/submissions/{submission.id}/verify/",
+            {"enrollment": self._enrollment().id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Illegal transition", response.data["detail"])
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, Submission.Status.UPLOADED)
 
     def test_stale_update_is_rejected(self):
         submission = self._make_submission("test_stale.pdf")

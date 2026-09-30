@@ -60,12 +60,20 @@ class Submission(models.Model):
 
     def __str__(self):
         return self.original_filename
+    # "processing" is also reached by retrying recognition and by replacing
+    # the file; "recognition_failed" is left by retrying or verifying by hand.
     ALLOWED_TRANSITIONS = {
         "uploaded": {"processing", "matched", "needs_verification"},
-        "processing": {"matched", "needs_verification", "verified"},
-        "matched": {"verified", "needs_verification"},
-        "needs_verification": {"verified"},
-        "verified": {"verified", "marked"},
+        "processing": {
+            "matched",
+            "needs_verification",
+            "verified",
+            "recognition_failed",
+        },
+        "matched": {"verified", "needs_verification", "processing"},
+        "needs_verification": {"verified", "processing"},
+        "recognition_failed": {"verified", "processing"},
+        "verified": {"verified", "marked", "processing"},
         "marked": set(),
     }
     def record_status_change(

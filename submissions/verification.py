@@ -14,11 +14,16 @@ def verify_submission(submission, enrollment, actor=None):
             "Enrollment does not belong to the submission's course."
         )
 
-    submission.record_status_change(
-        actor=actor,
-        new_status=Submission.Status.VERIFIED,
-        reason="Verified against enrollment",
-        new_enrollment=enrollment,
-    )
+    # An illegal transition is the caller's mistake, so it is reported
+    # like the checks above (400) instead of escaping as a server error.
+    try:
+        submission.record_status_change(
+            actor=actor,
+            new_status=Submission.Status.VERIFIED,
+            reason="Verified against enrollment",
+            new_enrollment=enrollment,
+        )
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
 
     return submission
