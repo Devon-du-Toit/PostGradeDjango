@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "assessments",
     "submissions",
     "distribution",
+    "dashboard",
 ]
 
 MIDDLEWARE = [
