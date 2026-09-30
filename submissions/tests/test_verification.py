@@ -266,7 +266,7 @@ class SubmissionVerificationAPITests(TestCase):
 
         returned_ids = {
             item["id"]
-            for item in response.data
+            for item in response.data["results"]
         }
 
         self.assertIn(
@@ -323,7 +323,7 @@ class SubmissionVerificationAPITests(TestCase):
 
         returned_ids = {
             item["id"]
-            for item in response.data
+            for item in response.data["results"]
         }
 
         self.assertNotIn(

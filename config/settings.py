@@ -35,11 +35,13 @@ INSTALLED_APPS = [
     "accounts",
     "rest_framework",
     "corsheaders",
+    "django_filters",
     "courses",
     "students",
     "assessments",
     "submissions",
     "distribution",
+    "dashboard",
 ]
 
 MIDDLEWARE = [
@@ -149,6 +151,11 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    "DEFAULT_PAGINATION_CLASS": "config.pagination.StandardPagination",
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+    ),
 }
 
 CORS_ALLOWED_ORIGINS = [
@@ -157,3 +164,12 @@ CORS_ALLOWED_ORIGINS = [
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+# Submission file validation limits.
+# A submission is one student's whole marked script (returned to the
+# student), so several pages are allowed; recognition reads page 1.
+# These are not general-purpose document storage limits.
+MAX_SUBMISSION_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
+MAX_SUBMISSION_PDF_PAGES = 20
+MAX_SUBMISSION_IMAGE_DIMENSION_PX = 6000

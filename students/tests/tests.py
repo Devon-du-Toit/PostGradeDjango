@@ -198,9 +198,9 @@ class StudentAPITests(TestCase):
         response = self.client.get("/api/students/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(
-            response.data[0]["student_number"],
+            response.data["results"][0]["student_number"],
             "12345678",
         )
 
@@ -427,11 +427,11 @@ class StudentAPITests(TestCase):
             status.HTTP_200_OK,
         )
 
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(len(response.data["results"]), 2)
 
         student_numbers = {
             student["student_number"]
-            for student in response.data
+            for student in response.data["results"]
         }
 
         self.assertEqual(
@@ -474,7 +474,7 @@ class StudentAPITests(TestCase):
             response.status_code,
             status.HTTP_200_OK,
         )
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(len(response.data["results"]), 0)
 
     def test_import_students_from_csv(self):
         course = Course.objects.create(
