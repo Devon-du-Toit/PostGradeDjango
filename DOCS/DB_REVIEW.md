@@ -22,6 +22,14 @@ Deleting an Assessment wipes its Results.
 
 Should these be PROTECT, SET_NULL, or soft-delete instead?
 
+### Model vs serializer validation
+
+Result.clean(), Enrollment.clean(), and Submission-related clean() methods enforce things like course match, owner match, and mark <= max_mark. These run on full_clean(), not on save().
+
+The DRF serializer does not call full_clean(). So values that come in through the API can be saved without those checks running, unless the serializer re-implements them.
+
+Decision needed: replicate the model validations in the serializer, call full_clean() from the serializer's validate(), or move the constraints into the database where they cannot be bypassed.
+
 ## Good
 
 Unique constraints present on Result, Course, Student, Enrollment.
@@ -32,3 +40,9 @@ Migration drift check runs in CI.
 Query-count measurements. Needs representative data.
 Backup/restore demo. Needs non-production DB.
 Index review. Needs real data.
+
+### Duplicate submissions (decision needed)
+
+There is no uniqueness constraint preventing the same enrollment from submitting twice for the same assessment. Django currently allows it. The Vue client does not warn about it either.
+
+Decision needed: reject duplicates at the model level, allow but flag them for review, or allow freely.

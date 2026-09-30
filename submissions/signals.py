@@ -1,30 +1,49 @@
 import logging
 
+from django.db import transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from submissions.models import Submission
+from submissions.models import RecognitionAttempt, Submission
 
 logger = logging.getLogger(__name__)
 
 
+def delete_file_after_commit(storage, name, owner):
+    # Files are removed only once the delete commits, so a rolled-back
+    # delete keeps its file. A storage failure is logged, not raised:
+    # the row is already gone and the request must not fail afterwards.
+    def delete():
+        try:
+            storage.delete(name)
+        except Exception:
+            logger.exception("Failed to delete stored file %s for %s", name, owner)
+
+    transaction.on_commit(delete)
+
+
 @receiver(post_delete, sender=Submission)
-def delete_submission_file_from_storage(sender, instance, **kwargs):
-    """
-    Remove the uploaded file from storage once its Submission row
-    is gone. Also fires on cascade delete (e.g. deleting the
-    parent Assessment or Course), since Django sends this signal
-    for every row it collects, not just the one .delete() was
-    called on directly.
-    """
+def delete_submission_file(sender, instance, **kwargs):
+    # Also fires on cascade deletes (assessment, course), since Django
+    # sends post_delete for every row it collects.
     if not instance.file:
         return
 
-    try:
-        instance.file.storage.delete(instance.file.name)
-    except Exception:
-        logger.exception(
-            "Failed to delete storage file for submission %s (%s)",
-            instance.pk,
-            instance.file.name,
-        )
+    delete_file_after_commit(
+        instance.file.storage,
+        instance.file.name,
+        f"submission {instance.pk}",
+    )
+
+
+@receiver(post_delete, sender=RecognitionAttempt)
+def delete_region_image(sender, instance, **kwargs):
+    # Also fires for attempts deleted by a Submission cascade.
+    if not instance.region_image:
+        return
+
+    delete_file_after_commit(
+        instance.region_image.storage,
+        instance.region_image.name,
+        f"recognition attempt {instance.pk}",
+    )

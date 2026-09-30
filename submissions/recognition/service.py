@@ -1,12 +1,16 @@
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from django.core.files.base import ContentFile
+from submissions.models import RecognitionAttempt
 from submissions.recognition.document import (
+    crop_image,
     recognition_image,
 )
 from submissions.recognition.localization import (
-    find_student_number_text,
+    locate_student_number,
 )
 from submissions.recognition.matching import (
     find_best_student_number_match,
@@ -21,17 +25,31 @@ from submissions.recognition.types import (
     RecognitionResult,
 )
 
+PROCESSING_VERSION = "ocr-1"
+
+MAX_ERROR_LENGTH = 2000
+
+REASON_AREA_NOT_FOUND = "Student number area could not be identified"
+REASON_NOT_MATCHED = "Student number could not be matched"
+
+logger = logging.getLogger(__name__)
 
 @contextmanager
-def _staged_local_file(field_file):
+def _local_file_path(field_file):
+    """Yield a local filesystem path for a submission file.
+
+    OCR needs a real path. Local storage already has one; storage without
+    local paths (e.g. cloud blob storage) is copied to a temporary file
+    through the Storage API and removed afterwards.
     """
-    Materialize a submission's file as a local temporary file,
-    regardless of what storage backend it actually lives on.
-    Reads via field_file.open()/.read() - the Storage API -
-    instead of submission.file.path, so this keeps working when
-    the storage backend isn't local disk (e.g. S3).
-    """
-    suffix = Path(field_file.name).suffix
+    try:
+        local_path = field_file.path
+    except NotImplementedError:
+        local_path = None
+
+    if local_path is not None:
+        yield Path(local_path)
+        return
 
     field_file.open("rb")
     try:
@@ -40,7 +58,7 @@ def _staged_local_file(field_file):
         field_file.close()
 
     with NamedTemporaryFile(
-        suffix=suffix,
+        suffix=Path(field_file.name).suffix,
         delete=False,
     ) as temporary_file:
         temporary_file.write(raw_bytes)
@@ -53,40 +71,105 @@ def _staged_local_file(field_file):
 
 
 def recognize_submission(submission):
-    # Determine which student this uploaded script belongs to.
-    with _staged_local_file(submission.file) as local_path:
-        with recognition_image(
-            local_path
-        ) as image_path:
+    attempt = RecognitionAttempt(
+        submission=submission,
+        method=RecognitionAttempt.Method.OCR,
+        processing_version=PROCESSING_VERSION,
+    )
 
-            # Check image quality before trying OCR.
-            quality_result = assess_image_quality(
-                image_path
-            )
+    try:
+        result = run_recognition(submission, attempt)
+    except Exception as exc:
+        attempt.outcome = RecognitionAttempt.Outcome.ERROR
+        attempt.error_type = type(exc).__name__
+        attempt.error_message = str(exc)[:MAX_ERROR_LENGTH]
+        attempt.save()
+        raise
 
-            if not quality_result.usable:
-                return RecognitionResult(
-                    enrollment=None,
-                    reason=quality_result.reason,
-                )
+    attempt.save()
 
-            student_number_text = (
-                find_student_number_text(
-                    image_path
-                )
-            )
+    return result
 
-    if student_number_text is None:
-        return RecognitionResult(
-            enrollment=None,
-            reason=(
-                "Student number area could not be identified"
-            ),
+def save_region_image(attempt, image_path, box):
+    try:
+        attempt.region_image.save(
+            f"submission_{attempt.submission_id}.png",
+            ContentFile(crop_image(image_path, box)),
+            save=False,
+        )
+    except Exception:
+        logger.warning(
+            "Could not save recognition region image for submission %s",
+            attempt.submission_id,
+            exc_info=True,
         )
 
+def run_recognition(submission, attempt):
+    # Determine which student this uploaded script belongs to.
+    with (
+        _local_file_path(submission.file) as local_path,
+        recognition_image(local_path) as image_path,
+    ):
+
+        # Check image quality before trying OCR.
+        quality_result = assess_image_quality(
+            image_path
+        )
+
+        if not quality_result.usable:
+            attempt.outcome = RecognitionAttempt.Outcome.IMAGE_UNUSABLE
+            attempt.quality_issues = [quality_result.reason]
+            return RecognitionResult(
+                enrollment=None,
+                reason=quality_result.reason,
+            )
+
+        region = locate_student_number(image_path)
+
+        if region is not None:
+            save_region_image(attempt, image_path, region.box)
+
+    if region is None:
+        attempt.outcome = RecognitionAttempt.Outcome.REGION_NOT_FOUND
+        return RecognitionResult(
+            enrollment=None,
+            reason=REASON_AREA_NOT_FOUND,
+        )
+
+    x1, y1, x2, y2 = region.box
+
+    attempt.raw_text = region.text
+    attempt.confidence = region.confidence
+    attempt.confidence_type = RecognitionAttempt.ConfidenceType.OCR_SCORE
+    attempt.region = {
+        "page": 0,
+        "x": x1,
+        "y": y1,
+        "width": x2 - x1,
+        "height": y2 - y1,
+        "image_width": region.image_width,
+        "image_height": region.image_height,
+    }
+
     candidates = extract_student_number_candidate(
-        student_number_text,
+        region.text
     )
+
+    if not candidates:
+        attempt.outcome = RecognitionAttempt.Outcome.NO_CANDIDATE
+        return RecognitionResult(
+            enrollment=None,
+            reason=REASON_NOT_MATCHED,
+        )
+
+    attempt.raw_candidate = candidates[0].value
+    attempt.raw_candidates = [
+        {
+            "value": candidate.value,
+            "confidence": candidate.confidence,
+        }
+        for candidate in candidates
+    ]
 
     enrollments = (
         submission.assessment.course
@@ -105,14 +188,19 @@ def recognize_submission(submission):
     )
 
     if matched_number is None:
+        attempt.outcome = RecognitionAttempt.Outcome.NO_MATCH
         return RecognitionResult(
             enrollment=None,
-            reason=(
-                "Student number could not be matched"
-            ),
+            reason=REASON_NOT_MATCHED,
         )
 
+    enrollment = enrollment_by_number[matched_number]
+
+    attempt.outcome = RecognitionAttempt.Outcome.MATCHED
+    attempt.suggested_enrollment = enrollment
+    attempt.suggested_student_number = matched_number
+
     return RecognitionResult(
-        enrollment=enrollment_by_number[matched_number],
+        enrollment=enrollment,
         reason=None,
     )

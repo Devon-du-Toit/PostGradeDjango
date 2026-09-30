@@ -30,7 +30,7 @@ from assessments.models import Assessment
 from courses.models import Course
 from submissions.models import Submission
 from submissions.recognition.service import recognize_submission
-from submissions.recognition.types import StudentNumberCandidate
+from submissions.recognition.types import ImageQualityResult
 
 def _make_valid_jpeg_bytes():
     # A flat/blank image fails quality.py's checks (no contrast,
@@ -108,9 +108,11 @@ class SubmissionDeletionCleanupTests(TestCase):
         self.assertTrue(file_path.exists())
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.delete(
-            f"/api/submissions/{submission.id}/"
-        )
+        # Files are removed once the delete commits.
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(
+                f"/api/submissions/{submission.id}/"
+            )
 
         self.assertEqual(
             response.status_code,
@@ -128,8 +130,9 @@ class SubmissionDeletionCleanupTests(TestCase):
 
         # No API endpoint deletes an Assessment directly here, so
         # this exercises the model-level cascade the signal has to
-        # survive.
-        self.assessment.delete()
+        # survive. Files are removed once the delete commits.
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assessment.delete()
 
         self.assertFalse(
             Submission.objects.filter(pk=submission.id).exists()
@@ -227,9 +230,11 @@ class SubmissionDeletionCleanupTests(TestCase):
         )
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.delete(
-            f"/api/submissions/{submission.id}/"
-        )
+        # Files are removed once the delete commits.
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(
+                f"/api/submissions/{submission.id}/"
+            )
 
         self.assertEqual(
             response.status_code,
@@ -293,11 +298,13 @@ class SubmissionFileReplacementTests(TestCase):
             content_type="application/pdf",
         )
 
-        response = self.client.patch(
-            f"/api/submissions/{self.submission.id}/",
-            {"file": replacement_file},
-            format="multipart",
-        )
+        # The old file is removed once the replacement commits.
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f"/api/submissions/{self.submission.id}/",
+                {"file": replacement_file},
+                format="multipart",
+            )
 
         self.assertEqual(
             response.status_code,
@@ -371,7 +378,10 @@ class SubmissionFileReplacementTests(TestCase):
 
         response = self.client.patch(
             f"/api/submissions/{self.submission.id}/",
-            {"enrollment": enrollment.id},
+            {
+                "enrollment": enrollment.id,
+                "version": self.submission.version,
+            },
             format="multipart",
         )
 
@@ -421,25 +431,15 @@ class SubmissionRecognitionStorageAgnosticTests(TestCase):
             original_filename="paper.jpg",
         )
 
-    @patch(
-        "submissions.recognition.service."
-        "extract_student_number_candidate"
-    )
-    @patch(
-        "submissions.recognition.service."
-        "find_student_number_text"
-    )
+    @patch("submissions.recognition.service.locate_student_number")
+    @patch("submissions.recognition.service.assess_image_quality")
     def test_recognition_succeeds_when_file_path_is_unavailable(
         self,
-        mock_find_text,
-        mock_extract_candidate,
+        mock_assess_quality,
+        mock_locate,
     ):
-        mock_find_text.return_value = (
-            "Student number: 12345678"
-        )
-        mock_extract_candidate.return_value = [
-            StudentNumberCandidate(value="12345678", confidence=0.9)
-        ]
+        mock_assess_quality.return_value = ImageQualityResult(usable=True)
+        mock_locate.return_value = None
 
         # Simulate a non-filesystem storage backend (e.g. S3),
         # where FieldFile.path raises NotImplementedError.
@@ -455,4 +455,4 @@ class SubmissionRecognitionStorageAgnosticTests(TestCase):
             # Should not raise, and should not touch .path at all.
             recognize_submission(self.submission)
 
-        mock_find_text.assert_called_once()
+        mock_locate.assert_called_once()

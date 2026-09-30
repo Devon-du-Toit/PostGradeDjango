@@ -5,6 +5,8 @@ from submissions.views import (
     SubmissionFileDownloadView,
     SubmissionListCreateView,
     SubmissionMarkView,
+    SubmissionRecognitionImageView,
+    SubmissionRetryRecognitionView,
     SubmissionVerifyView,
     SubmissionVerificationQueueView,
 )
@@ -40,5 +42,15 @@ urlpatterns = [
         "<int:pk>/file/",
         SubmissionFileDownloadView.as_view(),
         name="submission-file-download",
+    ),
+    path(
+        "<int:pk>/recognition-image/",
+        SubmissionRecognitionImageView.as_view(),
+        name="submission-recognition-image",
+    ),
+    path(
+        "<int:pk>/retry-recognition/",
+        SubmissionRetryRecognitionView.as_view(),
+        name="submission-retry-recognition",
     ),
 ]
