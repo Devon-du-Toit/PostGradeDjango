@@ -1,4 +1,7 @@
 import logging
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from django.core.files.base import ContentFile
 from submissions.models import RecognitionAttempt
@@ -30,6 +33,42 @@ REASON_AREA_NOT_FOUND = "Student number area could not be identified"
 REASON_NOT_MATCHED = "Student number could not be matched"
 
 logger = logging.getLogger(__name__)
+
+@contextmanager
+def _local_file_path(field_file):
+    """Yield a local filesystem path for a submission file.
+
+    OCR needs a real path. Local storage already has one; storage without
+    local paths (e.g. cloud blob storage) is copied to a temporary file
+    through the Storage API and removed afterwards.
+    """
+    try:
+        local_path = field_file.path
+    except NotImplementedError:
+        local_path = None
+
+    if local_path is not None:
+        yield Path(local_path)
+        return
+
+    field_file.open("rb")
+    try:
+        raw_bytes = field_file.read()
+    finally:
+        field_file.close()
+
+    with NamedTemporaryFile(
+        suffix=Path(field_file.name).suffix,
+        delete=False,
+    ) as temporary_file:
+        temporary_file.write(raw_bytes)
+        temporary_path = Path(temporary_file.name)
+
+    try:
+        yield temporary_path
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
 
 def recognize_submission(submission):
     attempt = RecognitionAttempt(
@@ -67,9 +106,10 @@ def save_region_image(attempt, image_path, box):
 
 def run_recognition(submission, attempt):
     # Determine which student this uploaded script belongs to.
-    with recognition_image(
-        submission.file.path
-    ) as image_path:
+    with (
+        _local_file_path(submission.file) as local_path,
+        recognition_image(local_path) as image_path,
+    ):
 
         # Check image quality before trying OCR.
         quality_result = assess_image_quality(
