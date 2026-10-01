@@ -14,13 +14,25 @@
 
 Result creation has no transaction or locking around create-or-update. Two simultaneous requests can cause an unhandled IntegrityError. Fix: use select_for_update() or get_or_create().
 
-### Cascade deletes (team decision needed)
+### Cascade deletes
 
-Deleting a User wipes courses, students, assessments, enrollments, results, submissions.
-Deleting an Enrollment wipes its Results.
-Deleting an Assessment wipes its Results.
+Current behavior:
 
-Should these be PROTECT, SET_NULL, or soft-delete instead?
+- Deleting a User wipes courses, students, assessments, enrollments, results, and submissions.
+- Deleting an Enrollment wipes its Results.
+- Deleting an Assessment wipes its Results.
+
+Recommendation:
+
+- User -> Course / Student / Assessment: PROTECT. Deleting a user should not silently wipe their content. Require an explicit content-removal step first.
+- Enrollment -> Result: PROTECT. Results are grade records. They should not disappear because an enrollment was deleted.
+- Assessment -> Result: PROTECT. Same reasoning.
+- Submission -> SubmissionAudit: SET_NULL on the FK so audit rows survive submission deletion. Audit is a historical record and should outlive its subject.
+- Submission -> RecognitionAttempt / RecognitionJob: CASCADE. These are operational artifacts, not records, and can go with the submission.
+
+Rationale: audit and grade data are historical records and must survive; recognition artifacts are disposable and cascading them keeps the schema simple.
+
+Implementation is a follow-up: one migration plus a small test per relationship, roughly one hour.
 
 ### Model vs serializer validation
 
