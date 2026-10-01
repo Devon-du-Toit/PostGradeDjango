@@ -40,19 +40,34 @@ The initial backend foundation includes:
 - CORS configuration for the Vue development server
 - Automated tests for registration and authentication
 
+### Features added since Phase 1
+
+- Courses, owned by and visible only to the user who created them
+- Students and enrollments, including CSV class-list import
+- Assessments, results, a per-course gradebook and assessment statistics
+- Submission upload with background student-number recognition (OCR), image quality checks and a manual verification queue
+- Result email delivery through a background mail worker
+- Continuous integration and database backup/restore documentation
+
+Bubble-sheet recognition is planned but not yet implemented; only OCR-based recognition currently runs.
+
 ## Project Structure
 
-```text
 PostGradeDjango/
 ├── accounts/               # User accounts and authentication
+├── assessments/            # Assessments, results, gradebook and statistics
 ├── config/                 # Django project configuration
+├── courses/                # Courses (owned per user)
+├── distribution/           # Result email delivery and mail worker
+├── students/               # Students, enrollments and CSV class-list import
+├── submissions/            # Submission upload, recognition, verification and marking
 ├── DOCS/                   # Project documentation
+├── .github/                # CI workflow
 ├── .env.example            # Example environment configuration
 ├── .gitignore
 ├── manage.py
 ├── README.md
 └── requirements.txt
-```
 
 ## Local Development
 
@@ -164,6 +179,7 @@ Protected endpoints use JWT Bearer authentication:
 ```http
 Authorization: Bearer <access_token>
 ```
+The full endpoint inventory, with request, response and error examples, is in [`DOCS/API_REFERENCE.md`](DOCS/API_REFERENCE.md). Submission and recognition endpoints are covered in [`DOCS/RECOGNITION_EVIDENCE_API.md`](DOCS/RECOGNITION_EVIDENCE_API.md), and result emails in [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md).
 
 ## Running Tests
 
@@ -179,6 +195,17 @@ Additional project checks can be run with:
 python manage.py check
 python manage.py makemigrations --check
 ```
+## Documentation
+
+| Document | Covers |
+|---|---|
+| [`DOCS/API_REFERENCE.md`](DOCS/API_REFERENCE.md) | Endpoint inventory with request, response and error examples |
+| [`DOCS/POSTGRESQL_SETUP.md`](DOCS/POSTGRESQL_SETUP.md) | Local database setup |
+| [`DOCS/RECOGNITION_EVIDENCE_API.md`](DOCS/RECOGNITION_EVIDENCE_API.md) | Submission and recognition API, quality checks |
+| [`DOCS/RECOGNITION_WORKER.md`](DOCS/RECOGNITION_WORKER.md) | Recognition worker setup and troubleshooting |
+| [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md) | Result email delivery |
+| [`DOCS/BACKUP_RESTORE.md`](DOCS/BACKUP_RESTORE.md) | Database backup and recovery |
+| [`DOCS/CI.md`](DOCS/CI.md), [`DOCS/DB_REVIEW.md`](DOCS/DB_REVIEW.md) | CI pipeline and database review notes |
 
 ## Development Roadmap
 
@@ -195,7 +222,7 @@ The roadmap will evolve as the system develops.
 
 ## Related Repository
 
-The Vue.js frontend is maintained separately in the `PostGradeVue` repository.
+The Vue.js frontend is maintained separately in the [PostGradeVue](https://github.com/Devon-du-Toit/PostGradeVue) repository.
 
 ## License
 
