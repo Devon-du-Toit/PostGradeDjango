@@ -182,9 +182,21 @@ class VerificationQueueTests(Base):
         r = self.client.get(QUEUE_URL, {"status": Submission.Status.MATCHED, "page_size": 10})
         self.assertEqual(self._ids(r), [self.s_matched.id])
 
+    def test_queue_includes_failed_recognition(self):
+        failed = self._submission(self.assess_a, Submission.Status.RECOGNITION_FAILED)
+
+        everything = self.client.get(QUEUE_URL, {"page_size": 10})
+        only_failed = self.client.get(
+            QUEUE_URL,
+            {"status": Submission.Status.RECOGNITION_FAILED, "page_size": 10},
+        )
+
+        self.assertIn(failed.id, self._ids(everything))
+        self.assertEqual(self._ids(only_failed), [failed.id])
+
     def test_queue_status_outside_pending_set_returns_400(self):
-        # VerificationQueueFilter's choices only include needs_verification/matched,
-        # so "marked" is an invalid choice for this specific filter field.
+        # VerificationQueueFilter's choices only include the queue's statuses
+        # (VERIFICATION_QUEUE_STATUSES), so "marked" is an invalid choice here.
         r = self.client.get(QUEUE_URL, {"status": Submission.Status.MARKED, "page_size": 10})
         self.assertEqual(r.status_code, 400)
 
