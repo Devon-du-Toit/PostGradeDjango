@@ -157,3 +157,7 @@ CORS_ALLOWED_ORIGINS = [
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Class-list CSV import (students/csv_import.py).
+MAX_CSV_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
+MAX_CSV_IMPORT_ROWS = 5000
