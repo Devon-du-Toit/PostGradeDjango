@@ -163,6 +163,15 @@ class DashboardStatsTests(DashboardTestData, TestCase):
         self.assertEqual(stats["pending_verifications"], 2)
         self.assertEqual(stats["pending_verifications"], queue["count"])
 
+    def test_failed_recognition_counts_as_pending(self):
+        self.add_submission(self.test_one, Submission.Status.RECOGNITION_FAILED)
+
+        stats = self.client.get(self.url).data
+        queue = self.client.get("/api/submissions/verification-queue/").data
+
+        self.assertEqual(stats["pending_verifications"], 3)
+        self.assertEqual(stats["pending_verifications"], queue["count"])
+
     def test_counts_every_status_and_excludes_other_owners(self):
         by_status = self.client.get(self.url).data["submissions_by_status"]
 

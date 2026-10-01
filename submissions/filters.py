@@ -7,10 +7,12 @@ from submissions.models import Submission
 
 
 # Statuses listed in the verification queue; the dashboard's
-# pending_verifications count uses the same set.
+# pending_verifications count uses the same set. Failed recognitions are
+# included: the lecturer has to retry them or pick the student by hand.
 VERIFICATION_QUEUE_STATUSES = [
     Submission.Status.NEEDS_VERIFICATION,
     Submission.Status.MATCHED,
+    Submission.Status.RECOGNITION_FAILED,
 ]
 
 # Unmatched submissions have no student yet, so the filename is searched too.
