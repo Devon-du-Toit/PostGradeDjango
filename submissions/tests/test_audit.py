@@ -6,7 +6,7 @@ from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
-from submissions.models import Submission, SubmissionAudit
+from submissions.models import Submission
 
 
 class SubmissionAuditTests(TestCase):
