@@ -1,12 +1,18 @@
+from unittest import mock
+
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+
+from accounts.throttles import AuthRateThrottle
 
 
 User = get_user_model()
 
 
+@override_settings(ALLOW_REGISTRATION=True)
 class RegistrationTests(APITestCase):
 
     def test_register_user(self):
@@ -194,3 +200,79 @@ class UserManagerTests(APITestCase):
         )
 
         self.assertEqual(user.email, "Another@example.com")
+
+@override_settings(ALLOW_REGISTRATION=False)
+class ClosedRegistrationTests(APITestCase):
+
+    def test_registration_is_refused_when_closed(self):
+        response = self.client.post(
+            reverse("register"),
+            {"email": "new@example.com", "password": "TestPassword123!"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.exists())
+
+
+@mock.patch.object(
+    AuthRateThrottle,
+    "THROTTLE_RATES",
+    {"login": "2/min", "register": "1/min"},
+)
+class AuthThrottleTests(APITestCase):
+
+    def setUp(self):
+        User.objects.create_user(
+            email="test@example.com",
+            password="TestPassword123!",
+        )
+
+    def login(self, **extra):
+        return self.client.post(
+            reverse("login"),
+            {"email": "test@example.com", "password": "WrongPassword123!"},
+            format="json",
+            **extra,
+        )
+
+    def test_login_is_throttled_after_the_limit(self):
+        self.assertEqual(self.login().status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self.login().status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.login()
+
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertIn("Retry-After", response.headers)
+
+    def test_limit_is_per_client(self):
+        self.login()
+        self.login()
+
+        response = self.login(REMOTE_ADDR="10.0.0.2")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_forwarded_header_cannot_bypass_the_limit(self):
+        self.login()
+        self.login()
+
+        response = self.login(HTTP_X_FORWARDED_FOR="203.0.113.9")
+
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @override_settings(ALLOW_REGISTRATION=True)
+    def test_registration_is_throttled(self):
+        first = self.client.post(
+            reverse("register"),
+            {"email": "a@example.com", "password": "TestPassword123!"},
+            format="json",
+        )
+        second = self.client.post(
+            reverse("register"),
+            {"email": "b@example.com", "password": "TestPassword123!"},
+            format="json",
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)

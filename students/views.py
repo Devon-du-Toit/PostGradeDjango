@@ -110,10 +110,15 @@ class CourseStudentListView(generics.ListAPIView):
     search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
+        # 404 for someone else's course, like the other nested routes.
+        course = get_object_or_404(
+            Course.objects.only("id"),
+            id=self.kwargs["course_id"],
+            owner=self.request.user,
+        )
         return Student.objects.filter(
             owner=self.request.user,
-            enrollments__course_id=self.kwargs["course_id"],
-            enrollments__course__owner=self.request.user,
+            enrollments__course=course,
         ).order_by("student_number", "id")
 
 
