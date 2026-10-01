@@ -7,6 +7,10 @@ from rest_framework.views import APIView
 from decimal import Decimal
 
 from assessments.models import Assessment, Result
+from assessments.lifecycle import (
+    count_dependent_records,
+    deletion_blocked_response,
+)
 from assessments.serializers import AssessmentSerializer, ResultSerializer
 from assessments.services import (
     calculate_assessment_statistics,
@@ -43,6 +47,16 @@ class AssessmentDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Assessment.objects.filter(
             course__owner=self.request.user,
         )
+
+    def destroy(self, request, *args, **kwargs):
+        assessment = self.get_object()
+        blocked = deletion_blocked_response(
+            "assessment",
+            count_dependent_records(assessment=assessment),
+        )
+        if blocked is not None:
+            return blocked
+        return super().destroy(request, *args, **kwargs)
 
 
 class AssessmentResultListCreateView(generics.ListCreateAPIView):
