@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from courses.models import Course
 from students.models import Enrollment, Student
 from students.serializers import EnrollmentSerializer, StudentSerializer
+from students.filters import EnrollmentFilter, StudentFilter
 from django.db import transaction
 
 from django.shortcuts import get_object_or_404
@@ -66,9 +67,13 @@ class StudentEmailView(APIView):
 class StudentListCreateView(generics.ListCreateAPIView):
     serializer_class = StudentSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = StudentFilter
+    search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
-        return Student.objects.filter(owner=self.request.user)
+        return Student.objects.filter(
+            owner=self.request.user,
+        ).order_by("student_number", "id")
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -85,24 +90,31 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
 class EnrollmentListCreateView(generics.ListCreateAPIView):
     serializer_class = EnrollmentSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = EnrollmentFilter
+    search_fields = [
+        "student__student_number",
+        "student__first_name",
+        "student__last_name",
+    ]
 
     def get_queryset(self):
         return Enrollment.objects.filter(
             course__owner=self.request.user,
             student__owner=self.request.user,
-        )
+        ).order_by("course_id", "student__student_number", "id")
 
 
 class CourseStudentListView(generics.ListAPIView):
     serializer_class = StudentSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
         return Student.objects.filter(
             owner=self.request.user,
             enrollments__course_id=self.kwargs["course_id"],
             enrollments__course__owner=self.request.user,
-        )
+        ).order_by("student_number", "id")
 
 
 class StudentCSVImportView(generics.GenericAPIView):

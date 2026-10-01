@@ -173,9 +173,9 @@ class AssessmentAPITests(TestCase):
             response.status_code,
             status.HTTP_200_OK,
         )
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(
-            response.data[0]["name"],
+            response.data["results"][0]["name"],
             "Physics Test",
         )
 
@@ -540,9 +540,9 @@ class ResultAPITests(TestCase):
             response.status_code,
             status.HTTP_200_OK,
         )
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(
-            Decimal(str(response.data[0]["percentage"])),
+            Decimal(str(response.data["results"][0]["percentage"])),
             Decimal("80.00"),
         )
 
@@ -574,9 +574,9 @@ class ResultAPITests(TestCase):
             response.status_code,
             status.HTTP_200_OK,
         )
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(
-            response.data[0]["mark"],
+            response.data["results"][0]["mark"],
             "40.00",
         )
 
@@ -777,11 +777,11 @@ class ResultAPITests(TestCase):
         )
 
         self.assertEqual(
-            response.data[0]["student_number"],
+            response.data["results"][0]["student_number"],
             "12345678",
         )
 
         self.assertEqual(
-            response.data[0]["student_name"],
+            response.data["results"][0]["student_name"],
             "Alice Smith",
         )

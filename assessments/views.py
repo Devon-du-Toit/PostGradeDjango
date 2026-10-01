@@ -19,6 +19,7 @@ from distribution.services import schedule_result_email
 class CourseAssessmentListCreateView(generics.ListCreateAPIView):
     serializer_class = AssessmentSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = ["name"]
 
     def get_course(self):
         return get_object_or_404(
@@ -29,7 +30,10 @@ class CourseAssessmentListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         course = self.get_course()
-        return Assessment.objects.filter(course=course)
+        # undated assessments sort last
+        return Assessment.objects.filter(
+            course=course,
+        ).order_by("date", "name", "id")
 
     def perform_create(self, serializer):
         serializer.save(course=self.get_course())
@@ -48,18 +52,30 @@ class AssessmentDetailView(generics.RetrieveUpdateDestroyAPIView):
 class AssessmentResultListCreateView(generics.ListCreateAPIView):
     serializer_class = ResultSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = [
+        "enrollment__student__student_number",
+        "enrollment__student__first_name",
+        "enrollment__student__last_name",
+    ]
 
     def get_assessment(self):
-        return get_object_or_404(
-            Assessment,
-            pk=self.kwargs["assessment_id"],
-            course__owner=self.request.user,
-        )
+        # Looked up once per request; get_queryset, the serializer
+        # context and perform_create all need it.
+        if not hasattr(self, "_assessment"):
+            self._assessment = get_object_or_404(
+                Assessment,
+                pk=self.kwargs["assessment_id"],
+                course__owner=self.request.user,
+            )
+        return self._assessment
 
     def get_queryset(self):
         return Result.objects.filter(
             assessment=self.get_assessment(),
-        )
+        ).select_related(
+            "assessment",
+            "enrollment__student",
+        ).order_by("enrollment__student__student_number", "id")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -79,6 +95,9 @@ class ResultDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Result.objects.filter(
             assessment__course__owner=self.request.user,
+        ).select_related(
+            "assessment",
+            "enrollment__student",
         )
 
     def get_serializer_context(self):
