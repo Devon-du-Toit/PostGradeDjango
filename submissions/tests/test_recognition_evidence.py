@@ -1,9 +1,11 @@
 import os
+from datetime import timedelta
 from io import BytesIO
 
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.test import TestCase
+from django.utils import timezone
 from PIL import Image
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -187,6 +189,13 @@ class RecognitionEvidenceFieldTests(
         )
 
     def test_error_type_is_exposed_but_message_is_not(self):
+        # Make the setUp attempt clearly older. Two inserts in a row can get
+        # the same created_at on a coarse clock (Windows: ~0.4 ms), and then
+        # "latest attempt" has no defined order.
+        RecognitionAttempt.objects.filter(pk=self.attempt.pk).update(
+            created_at=timezone.now() - timedelta(minutes=1),
+        )
+
         RecognitionAttempt.objects.create(
             submission=self.submission,
             method=RecognitionAttempt.Method.OCR,
