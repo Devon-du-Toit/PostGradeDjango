@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from courses.models import Course
 from students.models import Enrollment, Student
 
 

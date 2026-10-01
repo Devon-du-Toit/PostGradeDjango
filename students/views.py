@@ -1,23 +1,17 @@
 import csv
 import io
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from courses.models import Course
-from students.models import Enrollment, Student
-from students.serializers import EnrollmentSerializer, StudentSerializer
-from students.filters import EnrollmentFilter, StudentFilter
-from django.db import transaction
-
-from django.shortcuts import get_object_or_404
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from students.models import Student
+from courses.models import Course
+from students.filters import EnrollmentFilter, StudentFilter
+from students.models import Enrollment, Student
+from students.serializers import EnrollmentSerializer, StudentSerializer
 from submissions.emailing import send_student_email
 
 

@@ -10,7 +10,6 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 
 from accounts.models import User
-from assessments.models import Assessment
 from courses.models import Course
 
 from students.models import Enrollment, Student
