@@ -6,7 +6,7 @@ from assessments.models import Result
 from assessments.serializers import ResultSerializer
 from distribution.serializers import ResultEmailSerializer
 from distribution.services import schedule_result_email
-from submissions.models import Submission
+from submissions.models import Submission, SubmissionAudit
 from submissions.serializers import SubmissionSerializer
 
 from django.core.exceptions import ValidationError
@@ -93,8 +93,19 @@ class SubmissionMarkView(generics.GenericAPIView):
                 assessment=submission.assessment,
             )
 
+            previous_status = submission.status
             submission.status = Submission.Status.MARKED
             submission.save(update_fields=["status"])
+
+            SubmissionAudit.objects.create(
+                submission=submission,
+                actor=request.user,
+                previous_status=previous_status,
+                new_status=Submission.Status.MARKED,
+                previous_enrollment=submission.enrollment,
+                new_enrollment=submission.enrollment,
+                reason="Result created",
+            )
 
             email = schedule_result_email(result)
 
@@ -143,6 +154,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
             verify_submission(
                 submission,
                 enrollment,
+                actor=request.user,
             )
         except ValidationError as exc:
             return Response(

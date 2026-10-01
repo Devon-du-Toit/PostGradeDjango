@@ -581,9 +581,13 @@ class ProcessingEnrollmentGuardTests(RecognitionJobTestMixin, TestCase):
         self.submission = self.create_processing_submission()
 
     def patch_enrollment(self):
+        self.submission.refresh_from_db()
         return self.client.patch(
             f"/api/submissions/{self.submission.id}/",
-            {"enrollment": self.enrollment.id},
+            {
+                "enrollment": self.enrollment.id,
+                "version": self.submission.version,
+            },
             format="json",
         )
 

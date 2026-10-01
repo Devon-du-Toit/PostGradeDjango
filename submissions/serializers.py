@@ -91,6 +91,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "recognition_job",
             "created_at",
             "updated_at",
+            "version",
         ]
         read_only_fields = [
             "id",
@@ -109,7 +110,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return RecognitionJobSerializer(
             jobs[0],
         ).data
-        
+
     def get_recognition(self, submission):
         attempts = submission.recognition_attempts.all()
 
@@ -119,7 +120,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return RecognitionAttemptSerializer(
             attempts[0],
         ).data
-        
+
     def validate_file(self, file):
         if (
             self.instance is not None
@@ -130,6 +131,17 @@ class SubmissionSerializer(serializers.ModelSerializer):
             )
 
         return file
+
+    def validate_version(self, value):
+        instance = self.instance
+        if instance is None:
+            return value
+        if value != instance.version:
+            raise serializers.ValidationError(
+                "This submission has been updated since you read it. "
+                "Reload and try again."
+            )
+        return value
 
     def validate_assessment(self, assessment):
         request = self.context["request"]
@@ -160,7 +172,30 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
         # Status changes go through Submission.record_status_change()
         # so we do not silently reset status on generic edits.
-        return super().update(instance, validated_data)
+        #
+        # Require a version field on every update so a client working
+        # from a stale read cannot write over newer data.
+        incoming_version = self.initial_data.get("version")
+        if incoming_version is None:
+            raise serializers.ValidationError(
+                {
+                    "version": "This field is required on update."
+                }
+            )
+        if int(incoming_version) != instance.version:
+            raise serializers.ValidationError(
+                {
+                    "version": (
+                        "This submission has been updated since you "
+                        "read it. Reload and try again."
+                    )
+                }
+            )
+
+        instance = super().update(instance, validated_data)
+        instance.version = instance.version + 1
+        instance.save(update_fields=["version", "updated_at"])
+        return instance
 
     def replace_file(self, instance, validated_data):
         # A new file invalidates any match made from the old one.
