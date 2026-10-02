@@ -115,8 +115,10 @@ this pattern.
 - **Base path:** all endpoints below are relative to `/api/`.
 - **Format:** all requests and responses use JSON, except file
   uploads (`multipart/form-data`) and file downloads.
-- **Authentication:** every endpoint except `register` and `login`
-  requires a JWT access token (see §4).
+- **Authentication:** every endpoint except `register`, `login` and
+  `refresh` requires a JWT access token (see §4). `refresh` takes the
+  refresh token in the request body, so it works without an access
+  token.
 - **Pagination:** list endpoints are **not paginated** — they
   return a plain JSON array of every matching object. This is worth
   knowing if a course ever has a very large number of students or
