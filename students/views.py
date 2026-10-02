@@ -143,6 +143,7 @@ class StudentCSVImportView(generics.GenericAPIView):
                 {
                     "message": "Import failed. Nothing was saved.",
                     "errors": plan.errors,
+                    "summary": plan.summary(),
                     "mismatches": plan.mismatches_payload(),
                 },
                 status=status.HTTP_400_BAD_REQUEST,

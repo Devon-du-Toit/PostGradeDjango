@@ -118,6 +118,34 @@ class CSVImportTests(APITestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(len(r.data["errors"]), 2)
 
+    def test_error_response_matches_vue_import_screen(self):
+        r = self.upload(
+            HEADER + ",Ann,Lee,ann@x.com\n002,,Ray,bob@x.com\n"
+        )
+        self.assertEqual(r.status_code, 400)
+        first, second = r.data["errors"]
+        self.assertEqual(first["student_number"], "")
+        self.assertEqual(
+            first["message"], "student_number: This field is required."
+        )
+        self.assertEqual(second["student_number"], "002")
+        self.assertEqual(
+            second["message"], "first_name: This field is required."
+        )
+        self.assertEqual(r.data["summary"]["total"], 2)
+        self.assertEqual(r.data["summary"]["failed"], 2)
+
+    def test_success_summary_has_total_and_failed(self):
+        r = self.upload(
+            HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n"
+        )
+        self.assertEqual(r.status_code, 200)
+        summary = r.data["summary"]
+        self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["created"], 2)
+        self.assertEqual(summary["updated"], 0)
+        self.assertEqual(summary["failed"], 0)
+        
     def test_whitespace_is_stripped(self):
         r = self.upload(HEADER + "  001 ,  Ann , Lee ,  ann@x.com \n")
         self.assertEqual(r.status_code, 200)
