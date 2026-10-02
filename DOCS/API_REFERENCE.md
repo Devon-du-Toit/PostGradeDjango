@@ -623,19 +623,39 @@ grown substantially and is **documented separately and in depth**:
 
 ### 8.1 Submission status lifecycle (summary)
 
-```
-uploaded → processing → matched ────────┐
-                      ↘ needs_verification │
-                                           ├→ verified → marked
-recognition_failed ←──(retry)─────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> processing: upload
+    processing --> matched: student found
+    processing --> needs_verification: no confident match
+    processing --> recognition_failed: 3 failed attempts
+    recognition_failed --> processing: retry
+    needs_verification --> processing: retry
+    matched --> verified: human confirms
+    needs_verification --> verified: human picks student
+    recognition_failed --> verified: human picks student
+    verified --> marked: mark entered
 ```
 
-A submission enters `processing` the moment it's uploaded; a
-background worker (see `RECOGNITION_WORKER.md`) then attempts
-automatic recognition. If recognition can't confidently identify a
-student, the submission is deliberately routed to
-`needs_verification` for a human to resolve — the system never
-guesses.
+A submission enters `processing` the moment it's uploaded, and a
+background worker (see `RECOGNITION_WORKER.md`) attempts automatic
+recognition. Each job gets up to three attempts (the default
+`max_attempts`); if all fail, the submission becomes
+`recognition_failed`. If a student is found it becomes `matched`,
+otherwise `needs_verification`. The system never guesses: both
+`matched` and `needs_verification` submissions appear in the
+verification queue (`GET /api/submissions/verification-queue/`) for
+a human to confirm or resolve.
+
+- **Retry** (`POST /api/submissions/<id>/retry-recognition/`) puts a
+  `recognition_failed` or `needs_verification` submission back into
+  `processing`. Retrying one that is already `processing` does
+  nothing; any other status is rejected.
+- **Verify** (`POST /api/submissions/<id>/verify/`) is refused only
+  for a `marked` submission, and the chosen enrollment must belong to
+  the submission's course.
+- **Mark** (`POST /api/submissions/<id>/mark/`) requires the status
+  `verified`; otherwise it returns 400.
 
 ### 8.2 Known gap: PR #22 (in progress)
 
