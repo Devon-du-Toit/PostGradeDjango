@@ -2,12 +2,12 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.urls import URLPattern, URLResolver, get_resolver, reverse
+from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from courses.models import Course
 from students.models import Enrollment, Student
-from students.views import StudentCSVImportView
+from students.serializers import StudentSerializer
 
 User = get_user_model()
 
@@ -15,60 +15,16 @@ HEADER = "student_number,first_name,last_name,email\n"
 
 
 def make_course(owner):
-    semester_field = Course._meta.get_field("semester")
-
-    if semester_field.choices:
-        semester = semester_field.choices[0][0]
-    elif semester_field.get_internal_type() in (
-        "IntegerField",
-        "PositiveIntegerField",
-        "SmallIntegerField",
-        "PositiveSmallIntegerField",
-    ):
-        semester = 1
-    else:
-        semester = "S1"
-
     return Course.objects.create(
         owner=owner,
         name="Test Course",
         year=2026,
-        semester=semester,
+        semester=1,
     )
 
 
-def _find_import_url_name():
-    """Walk the URL config and return the name of the route that
-    points at StudentCSVImportView (including any namespace)."""
-
-    def walk(patterns, prefix=""):
-        for pattern in patterns:
-            if isinstance(pattern, URLResolver):
-                namespace = (
-                    f"{prefix}{pattern.namespace}:"
-                    if pattern.namespace
-                    else prefix
-                )
-                found = walk(pattern.url_patterns, namespace)
-                if found:
-                    return found
-            elif isinstance(pattern, URLPattern):
-                view_class = getattr(pattern.callback, "view_class", None)
-                if view_class is StudentCSVImportView and pattern.name:
-                    return f"{prefix}{pattern.name}"
-        return None
-
-    return walk(get_resolver().url_patterns)
-
-
 def import_url(course):
-    name = _find_import_url_name()
-    if name is None:
-        raise AssertionError(
-            "Could not find a named URL for StudentCSVImportView. "
-            "Add name=... to its path() in students/urls.py."
-        )
-    return reverse(name, kwargs={"course_id": course.id})
+    return reverse("student-csv-import", kwargs={"course_id": course.id})
 
 
 class CSVImportTests(APITestCase):
@@ -94,6 +50,21 @@ class CSVImportTests(APITestCase):
             {"file": f, **extra},
             format="multipart",
         )
+
+    def test_import_passes_request_context_to_serializer(self):
+        def validate_student_number(serializer, value):
+            serializer.context["request"]  # KeyError if no context was passed
+            return value
+
+        with patch.object(
+            StudentSerializer,
+            "validate_student_number",
+            validate_student_number,
+            create=True,
+        ):
+            r = self.upload(HEADER + "001,Ann,Lee,ann@x.com\n")
+
+        self.assertEqual(r.status_code, 200)
 
     # ---- criterion 1: parsing ----
 

@@ -14,7 +14,6 @@ import csv
 import io
 from dataclasses import dataclass, field
 
-# pyright: reportMissingModuleSource=false
 from django.conf import settings
 from django.db import transaction
 
@@ -56,6 +55,24 @@ class RowMismatch:
     differences: dict
 
 
+def _errors_to_message(field_errors):
+    parts = []
+    for field_name, messages in field_errors.items():
+        if isinstance(messages, (list, tuple)):
+            messages = " ".join(str(m) for m in messages)
+        parts.append(f"{field_name}: {messages}")
+    return " ".join(parts)
+
+
+def _error_entry(row_number, errors, student_number=""):
+    return {
+        "row": row_number,
+        "student_number": student_number,
+        "errors": errors,
+        "message": _errors_to_message(errors),
+    }
+
+
 @dataclass
 class ImportPlan:
     rows_processed: int = 0
@@ -71,6 +88,8 @@ class ImportPlan:
 
     def summary(self):
         return {
+            "total": self.rows_processed,
+            "failed": len(self.errors),
             "rows_processed": self.rows_processed,
             "created": len(self.to_create),
             "updated": len(self.to_update),
@@ -150,6 +169,7 @@ def build_import_plan(
     owner,
     uploaded_file,
     update_existing=False,
+    serializer_context=None,
 ):
     """
     Validate every row of the uploaded CSV and return an ImportPlan
@@ -165,15 +185,10 @@ def build_import_plan(
     for row_number, row in enumerate(reader, start=2):
         if row_number - 1 > MAX_ROWS:
             plan.errors.append(
-                {
-                    "row": row_number,
-                    "errors": {
-                        "file": (
-                            f"File has more than {MAX_ROWS} data "
-                            "rows."
-                        )
-                    },
-                }
+                _error_entry(
+                    row_number,
+                    {"file": f"File has more than {MAX_ROWS} data rows."},
+                )
             )
             break
 
@@ -186,14 +201,11 @@ def build_import_plan(
 
         if None in row:
             plan.errors.append(
-                {
-                    "row": row_number,
-                    "errors": {
-                        "row": (
-                            "Row has more fields than the header."
-                        )
-                    },
-                }
+                _error_entry(
+                    row_number,
+                    {"row": "Row has more fields than the header."},
+                    fields["student_number"],
+                )
             )
             continue
 
@@ -205,13 +217,14 @@ def build_import_plan(
 
         if missing_fields:
             plan.errors.append(
-                {
-                    "row": row_number,
-                    "errors": {
+                _error_entry(
+                    row_number,
+                    {
                         column: "This field is required."
                         for column in missing_fields
                     },
-                }
+                    fields["student_number"],
+                )
             )
             continue
 
@@ -221,16 +234,17 @@ def build_import_plan(
 
         if first_seen_row is not None:
             plan.errors.append(
-                {
-                    "row": row_number,
-                    "errors": {
+                _error_entry(
+                    row_number,
+                    {
                         "student_number": (
                             f"Duplicate student_number "
                             f"'{student_number}' in file "
                             f"(first seen on row {first_seen_row})."
                         )
                     },
-                }
+                    student_number,
+                )
             )
             continue
 
@@ -242,14 +256,15 @@ def build_import_plan(
         ).first()
 
         if existing_student is None:
-            serializer = StudentSerializer(data=fields)
+            serializer = StudentSerializer(data=fields, context=serializer_context)
 
             if not serializer.is_valid():
                 plan.errors.append(
-                    {
-                        "row": row_number,
-                        "errors": serializer.errors,
-                    }
+                    _error_entry(
+                        row_number,
+                        serializer.errors,
+                        student_number,
+                    )
                 )
                 continue
 
@@ -278,14 +293,16 @@ def build_import_plan(
             serializer = StudentSerializer(
                 existing_student,
                 data=fields,
+                context=serializer_context,
             )
 
             if not serializer.is_valid():
                 plan.errors.append(
-                    {
-                        "row": row_number,
-                        "errors": serializer.errors,
-                    }
+                    _error_entry(
+                        row_number,
+                        serializer.errors,
+                        student_number,
+                    )
                 )
                 continue
 

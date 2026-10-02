@@ -130,6 +130,7 @@ class StudentCSVImportView(generics.GenericAPIView):
                 request.user,
                 uploaded_file,
                 update_existing=update_existing,
+                serializer_context={"request": request},
             )
         except CSVFileError as exc:
             return Response(
