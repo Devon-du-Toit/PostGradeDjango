@@ -53,6 +53,7 @@ Bubble-sheet recognition is planned but not yet implemented; only OCR-based reco
 
 ## Project Structure
 
+```text
 PostGradeDjango/
 ├── accounts/               # User accounts and authentication
 ├── assessments/            # Assessments, results, gradebook and statistics
@@ -68,6 +69,7 @@ PostGradeDjango/
 ├── manage.py
 ├── README.md
 └── requirements.txt
+```
 
 ## Local Development
 
