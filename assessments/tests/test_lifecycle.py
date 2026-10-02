@@ -14,8 +14,15 @@ from submissions.models import Submission
 from submissions.tests.helpers import TemporaryMediaMixin
 
 
-class DeletionGuardTests(TemporaryMediaMixin, TestCase):
-    """Courses and assessments that hold recorded data cannot be deleted."""
+def listed_ids(response):
+    """IDs from a list response, whether or not it is paginated."""
+    data = response.data
+    items = data["results"] if isinstance(data, dict) else data
+    return [item["id"] for item in items]
+
+
+class ArchiveTests(TemporaryMediaMixin, TestCase):
+    """DELETE archives courses and assessments; recorded data is kept."""
 
     def setUp(self):
         self.user = User.objects.create_user(
@@ -74,88 +81,53 @@ class DeletionGuardTests(TemporaryMediaMixin, TestCase):
             original_filename="paper.pdf",
         )
 
-    def assessment_url(self, assessment=None):
+    def assessment_url(self):
+        return reverse("assessment-detail", kwargs={"pk": self.assessment.pk})
+
+    def course_url(self):
+        return reverse("course-detail", kwargs={"pk": self.course.pk})
+
+    def assessment_list_url(self):
         return reverse(
-            "assessment-detail",
-            kwargs={"pk": (assessment or self.assessment).pk},
+            "course-assessment-list-create",
+            kwargs={"course_id": self.course.pk},
         )
 
-    def course_url(self, course=None):
+    def gradebook_url(self):
+        return reverse("course-gradebook", kwargs={"course_id": self.course.pk})
+
+    def statistics_url(self):
         return reverse(
-            "course-detail",
-            kwargs={"pk": (course or self.course).pk},
+            "assessment-statistics",
+            kwargs={"pk": self.assessment.pk},
         )
 
     # --- Assessments ---
 
-    def test_delete_assessment_with_results_is_blocked(self):
+    def test_delete_assessment_archives_it_and_keeps_data(self):
         self.make_result()
-
-        response = self.client.delete(self.assessment_url())
-
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["results"], 1)
-        self.assertEqual(response.data["submissions"], 0)
-        self.assertTrue(
-            Assessment.objects.filter(pk=self.assessment.pk).exists()
-        )
-        self.assertEqual(Result.objects.count(), 1)
-
-    def test_delete_assessment_with_only_submissions_is_blocked(self):
         self.make_submission()
 
-        response = self.client.delete(self.assessment_url())
-
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["results"], 0)
-        self.assertEqual(response.data["submissions"], 1)
-        self.assertTrue(
-            Assessment.objects.filter(pk=self.assessment.pk).exists()
-        )
-        self.assertEqual(Submission.objects.count(), 1)
-
-    def test_delete_empty_assessment_succeeds(self):
         response = self.client.delete(self.assessment_url())
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(
-            Assessment.objects.filter(pk=self.assessment.pk).exists()
-        )
-
-    def test_other_teacher_cannot_delete_assessment(self):
-        self.make_result()
-        self.client.force_authenticate(user=self.other_user)
-
-        response = self.client.delete(self.assessment_url())
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertTrue(
-            Assessment.objects.filter(pk=self.assessment.pk).exists()
-        )
-
-    # --- Courses ---
-
-    def test_delete_course_with_results_is_blocked(self):
-        self.make_result()
-
-        response = self.client.delete(self.course_url())
-
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["results"], 1)
-        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+        self.assessment.refresh_from_db()
+        self.assertIsNotNone(self.assessment.archived_at)
         self.assertEqual(Result.objects.count(), 1)
-
-    def test_delete_course_with_only_submissions_is_blocked(self):
-        self.make_submission()
-
-        response = self.client.delete(self.course_url())
-
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["submissions"], 1)
-        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
         self.assertEqual(Submission.objects.count(), 1)
 
-    def test_course_counts_cover_all_its_assessments(self):
+    def test_archived_assessment_is_hidden(self):
+        self.client.delete(self.assessment_url())
+
+        detail = self.client.get(self.assessment_url())
+        listing = self.client.get(self.assessment_list_url())
+        statistics = self.client.get(self.statistics_url())
+
+        self.assertEqual(detail.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertNotIn(self.assessment.pk, listed_ids(listing))
+        self.assertEqual(statistics.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_archived_assessment_is_left_out_of_gradebook(self):
         second = Assessment.objects.create(
             course=self.course,
             name="Test 2",
@@ -163,26 +135,98 @@ class DeletionGuardTests(TemporaryMediaMixin, TestCase):
             weight=Decimal("30.00"),
         )
         self.make_result()
-        self.make_result(assessment=second)
-        self.make_submission(assessment=second)
+        self.client.delete(self.assessment_url())
 
-        response = self.client.delete(self.course_url())
+        response = self.client.get(self.gradebook_url())
 
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["results"], 2)
-        self.assertEqual(response.data["submissions"], 1)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = [
+            item["assessment"]
+            for item in response.data["students"][0]["assessments"]
+        ]
+        self.assertEqual(ids, [second.pk])
 
-    def test_delete_course_with_no_recorded_data_succeeds(self):
+    def test_deleting_an_archived_assessment_again_is_404(self):
+        self.client.delete(self.assessment_url())
+
+        response = self.client.delete(self.assessment_url())
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_other_teacher_cannot_archive_assessment(self):
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.delete(self.assessment_url())
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assessment.refresh_from_db()
+        self.assertIsNone(self.assessment.archived_at)
+
+    # --- Courses ---
+
+    def test_delete_course_archives_it_and_keeps_data(self):
+        self.make_result()
+        self.make_submission()
+
         response = self.client.delete(self.course_url())
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Course.objects.filter(pk=self.course.pk).exists())
+        self.course.refresh_from_db()
+        self.assertIsNotNone(self.course.archived_at)
+        self.assertTrue(
+            Assessment.objects.filter(pk=self.assessment.pk).exists()
+        )
+        self.assertEqual(Result.objects.count(), 1)
+        self.assertEqual(Submission.objects.count(), 1)
 
-    def test_other_teacher_cannot_delete_course(self):
-        self.make_result()
+    def test_archived_course_is_hidden(self):
+        self.client.delete(self.course_url())
+
+        detail = self.client.get(self.course_url())
+        listing = self.client.get(reverse("course-list-create"))
+        assessments = self.client.get(self.assessment_list_url())
+        gradebook = self.client.get(self.gradebook_url())
+
+        self.assertEqual(detail.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertNotIn(self.course.pk, listed_ids(listing))
+        self.assertEqual(assessments.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(gradebook.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_assessment_of_archived_course_is_hidden(self):
+        self.client.delete(self.course_url())
+
+        response = self.client.get(self.assessment_url())
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_other_teacher_cannot_archive_course(self):
         self.client.force_authenticate(user=self.other_user)
 
         response = self.client.delete(self.course_url())
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+        self.course.refresh_from_db()
+        self.assertIsNone(self.course.archived_at)
+
+    def test_archived_assessment_is_left_out_of_course_grade(self):
+        second = Assessment.objects.create(
+            course=self.course,
+            name="Test 2",
+            max_mark=Decimal("100.00"),
+            weight=Decimal("30.00"),
+        )
+        self.make_result()  # 40 out of 50 = 80%
+        Result.objects.create(
+            assessment=second,
+            enrollment=self.enrollment,
+            mark=Decimal("50.00"),  # 50%
+        )
+        self.client.delete(self.assessment_url())
+
+        response = self.client.get(self.gradebook_url())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["students"][0]["course_percentage"],
+            Decimal("50.00"),
+        )

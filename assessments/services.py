@@ -2,7 +2,9 @@ from decimal import Decimal
 
 
 def calculate_course_grade(enrollment):
-    results = enrollment.results.select_related("assessment").all()
+    results = enrollment.results.select_related("assessment").filter(
+        assessment__archived_at__isnull=True,
+    )
 
     weighted_total = Decimal("0.00")
     completed_weight = Decimal("0.00")

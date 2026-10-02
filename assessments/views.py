@@ -1,16 +1,12 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework import generics, status
+from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from decimal import Decimal
 
 from assessments.models import Assessment, Result
-from assessments.lifecycle import (
-    count_dependent_records,
-    deletion_blocked_response,
-)
 from assessments.serializers import AssessmentSerializer, ResultSerializer
 from assessments.services import (
     calculate_assessment_statistics,
@@ -29,11 +25,15 @@ class CourseAssessmentListCreateView(generics.ListCreateAPIView):
             Course,
             pk=self.kwargs["course_id"],
             owner=self.request.user,
+            archived_at__isnull=True,
         )
 
     def get_queryset(self):
         course = self.get_course()
-        return Assessment.objects.filter(course=course)
+        return Assessment.objects.filter(
+            course=course,
+            archived_at__isnull=True,
+        )
 
     def perform_create(self, serializer):
         serializer.save(course=self.get_course())
@@ -46,18 +46,14 @@ class AssessmentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Assessment.objects.filter(
             course__owner=self.request.user,
+            course__archived_at__isnull=True,
+            archived_at__isnull=True,
         )
 
-    def destroy(self, request, *args, **kwargs):
-        assessment = self.get_object()
-        blocked = deletion_blocked_response(
-            "assessment",
-            count_dependent_records(assessment=assessment),
-        )
-        if blocked is not None:
-            return blocked
-        self.perform_destroy(assessment)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def perform_destroy(self, instance):
+        # Assessments are archived, never hard-deleted, so results,
+        # submissions and audit trails are kept.
+        instance.archive()
 
 
 class AssessmentResultListCreateView(generics.ListCreateAPIView):
@@ -69,6 +65,8 @@ class AssessmentResultListCreateView(generics.ListCreateAPIView):
             Assessment,
             pk=self.kwargs["assessment_id"],
             course__owner=self.request.user,
+            course__archived_at__isnull=True,
+            archived_at__isnull=True,
         )
 
     def get_queryset(self):
@@ -94,6 +92,8 @@ class ResultDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Result.objects.filter(
             assessment__course__owner=self.request.user,
+            assessment__course__archived_at__isnull=True,
+            assessment__archived_at__isnull=True,
         )
 
     def get_serializer_context(self):
@@ -120,6 +120,7 @@ class CourseGradebookView(APIView):
             Course,
             id=course_id,
             owner=request.user,
+            archived_at__isnull=True,
         )
 
         enrollments = course.enrollments.select_related(
@@ -129,7 +130,9 @@ class CourseGradebookView(APIView):
         students = []
 
         for enrollment in enrollments:
-            assessments = course.assessments.all()
+            assessments = course.assessments.filter(
+                archived_at__isnull=True,
+            )
 
             assessment_data = []
 
@@ -185,6 +188,8 @@ class AssessmentStatisticsView(APIView):
             Assessment,
             pk=pk,
             course__owner=request.user,
+            course__archived_at__isnull=True,
+            archived_at__isnull=True,
         )
 
         statistics = calculate_assessment_statistics(

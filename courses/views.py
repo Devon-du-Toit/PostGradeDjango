@@ -1,22 +1,20 @@
-from rest_framework import generics, status
+from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 
 from courses.models import Course
 from courses.serializers import CourseSerializer
 
-from assessments.lifecycle import (
-    count_dependent_records,
-    deletion_blocked_response,
-)
 
 class CourseListCreateView(generics.ListCreateAPIView):
     serializer_class = CourseSerializer
     permission_classes = [IsAuthenticated]
 
-    # user only gets their own courses
+    # user only gets their own courses, and archived ones are hidden
     def get_queryset(self):
-        return Course.objects.filter(owner=self.request.user)
+        return Course.objects.filter(
+            owner=self.request.user,
+            archived_at__isnull=True,
+        )
 
     # course ownership comes from the authenticated user
     def perform_create(self, serializer):
@@ -28,15 +26,12 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Course.objects.filter(owner=self.request.user)
-
-    def destroy(self, request, *args, **kwargs):
-        course = self.get_object()
-        blocked = deletion_blocked_response(
-            "course",
-            count_dependent_records(course=course),
+        return Course.objects.filter(
+            owner=self.request.user,
+            archived_at__isnull=True,
         )
-        if blocked is not None:
-            return blocked
-        self.perform_destroy(course)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def perform_destroy(self, instance):
+        # Courses are archived, never hard-deleted, so results,
+        # submissions and audit trails are kept.
+        instance.archive()

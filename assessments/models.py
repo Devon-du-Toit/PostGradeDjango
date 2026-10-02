@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
+from django.utils import timezone
 
 from courses.models import Course
 from students.models import Enrollment
@@ -46,13 +47,19 @@ class Assessment(models.Model):
         auto_now=True,
     )
 
+    archived_at = models.DateTimeField(null=True, blank=True)
+    
     class Meta:
         ordering = ["date", "name"]
 
     def __str__(self):
         return f"{self.course} - {self.name}"
 
-
+    def archive(self):
+        if self.archived_at is None:
+            self.archived_at = timezone.now()
+            self.save(update_fields=["archived_at", "updated_at"])
+            
 class Result(models.Model):
     assessment = models.ForeignKey(
         Assessment,
