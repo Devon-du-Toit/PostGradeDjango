@@ -1,5 +1,6 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from courses.models import Course
 from courses.serializers import CourseSerializer
@@ -37,4 +38,5 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
         if blocked is not None:
             return blocked
-        return super().destroy(request, *args, **kwargs)
+        self.perform_destroy(course)
+        return Response(status=status.HTTP_204_NO_CONTENT)

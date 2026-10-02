@@ -1,6 +1,6 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -56,7 +56,8 @@ class AssessmentDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
         if blocked is not None:
             return blocked
-        return super().destroy(request, *args, **kwargs)
+        self.perform_destroy(assessment)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AssessmentResultListCreateView(generics.ListCreateAPIView):
