@@ -1,0 +1,278 @@
+{
+  "dataset": "synthetic legacy fixture; not production or staging data",
+  "date": "2026-10-06",
+  "fresh_outstanding_migrations": 0,
+  "measurement": {
+    "integrity": {
+      "duplicate_submission_groups": 300,
+      "invalid_enrollment_owners": 0,
+      "invalid_submission_scopes": 0,
+      "unsent_orphan_deliveries": 0,
+      "verified_without_enrollment": 0
+    },
+    "jwt_query_counts": {
+      "/api/submissions/": 5,
+      "/api/submissions/verification-queue/": 5
+    },
+    "manifest": {
+      "media": {
+        "crop.png": "96534610e7cf48024bee9152ef58b0ca17e547162cb4b530e416f36d6963fbc5",
+        "script-emails/2026/10/06/script-0.pdf": "72084a654cb8f6c24ce740804cf25c09515f0610557388f3013ecd65f786db4c",
+        "source.pdf": "72084a654cb8f6c24ce740804cf25c09515f0610557388f3013ecd65f786db4c"
+      },
+      "outstanding_migrations": 0,
+      "tables": {
+        "accounts.User": {
+          "count": 1,
+          "sha256": "5b62bb27720791bbe6bd2c34649e1f89add2f0e37fc8c528cb23fe3850e40a55"
+        },
+        "assessments.Assessment": {
+          "count": 2,
+          "sha256": "07e5ef2fbda62593cf7f7ee5b1b228952ab5c16cf1dee97538f8eaa1c2524de2"
+        },
+        "courses.Course": {
+          "count": 2,
+          "sha256": "d1d18900c1f5e23ec23028ea1917786a0c800dba481016e523ff82eacca30484"
+        },
+        "distribution.ScriptEmail": {
+          "count": 3,
+          "sha256": "57d845242e1d9d608f4d69db75dc9c4d6bf2121a4b4240e100525337c9a63304"
+        },
+        "students.Enrollment": {
+          "count": 330,
+          "sha256": "4ccdf4a4de64625f9894c6a89462862eec924622919c2b9665659e5498ecf7e5"
+        },
+        "students.Student": {
+          "count": 300,
+          "sha256": "a05b0c398ca7357350f9463cac9f7c4e0a27844bfabc14a2760c4d6c22b4c681"
+        },
+        "submissions.RecognitionAttempt": {
+          "count": 1260,
+          "sha256": "436f416b10fa62c514cef45856ec39681ba7be9a6210498dc8b818b2a39a690f"
+        },
+        "submissions.RecognitionJob": {
+          "count": 630,
+          "sha256": "b275083fc1da108f95c1d88b2c1a2c82f7212daac7c430622dca0d74e04e0bfa"
+        },
+        "submissions.Submission": {
+          "count": 631,
+          "sha256": "ad1e5cc8a6412301d13286d5fb0e8ed47c99e2f8e316b39415e2bd13481eb089"
+        },
+        "submissions.SubmissionAudit": {
+          "count": 630,
+          "sha256": "fd79161dfa823bd275c1d21682e5dec3499463fc7ea98026cc5797043dca0f2c"
+        }
+      }
+    },
+    "query_counts": {
+      "/api/submissions/": [
+        {
+          "page_size": 1,
+          "queries": 4,
+          "returned": 1
+        },
+        {
+          "page_size": 25,
+          "queries": 4,
+          "returned": 25
+        },
+        {
+          "page_size": 100,
+          "queries": 4,
+          "returned": 100
+        }
+      ],
+      "/api/submissions/verification-queue/": [
+        {
+          "page_size": 1,
+          "queries": 4,
+          "returned": 1
+        },
+        {
+          "page_size": 25,
+          "queries": 4,
+          "returned": 25
+        },
+        {
+          "page_size": 100,
+          "queries": 4,
+          "returned": 100
+        }
+      ]
+    },
+    "queue_explain": [
+      {
+        "Execution Time": 0.844,
+        "Plan": {
+          "Actual Loops": 1,
+          "Actual Rows": 100,
+          "Actual Startup Time": 0.774,
+          "Actual Total Time": 0.789,
+          "Async Capable": false,
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Plan Rows": 1,
+          "Plan Width": 86,
+          "Plans": [
+            {
+              "Actual Loops": 1,
+              "Actual Rows": 100,
+              "Actual Startup Time": 0.773,
+              "Actual Total Time": 0.78,
+              "Async Capable": false,
+              "Node Type": "Sort",
+              "Parallel Aware": false,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 1,
+              "Plan Width": 86,
+              "Plans": [
+                {
+                  "Actual Loops": 1,
+                  "Actual Rows": 201,
+                  "Actual Startup Time": 0.048,
+                  "Actual Total Time": 0.592,
+                  "Async Capable": false,
+                  "Inner Unique": false,
+                  "Join Filter": "(assessments_assessment.course_id = courses_course.id)",
+                  "Join Type": "Inner",
+                  "Node Type": "Nested Loop",
+                  "Parallel Aware": false,
+                  "Parent Relationship": "Outer",
+                  "Plan Rows": 1,
+                  "Plan Width": 86,
+                  "Plans": [
+                    {
+                      "Actual Loops": 1,
+                      "Actual Rows": 1,
+                      "Actual Startup Time": 0.015,
+                      "Actual Total Time": 0.021,
+                      "Alias": "courses_course",
+                      "Async Capable": false,
+                      "Filter": "(archived_at IS NULL)",
+                      "Index Cond": "(owner_id = 1)",
+                      "Index Name": "unique_course_per_owner_period",
+                      "Node Type": "Index Scan",
+                      "Parallel Aware": false,
+                      "Parent Relationship": "Outer",
+                      "Plan Rows": 1,
+                      "Plan Width": 8,
+                      "Relation Name": "courses_course",
+                      "Rows Removed by Filter": 1,
+                      "Rows Removed by Index Recheck": 0,
+                      "Scan Direction": "Forward",
+                      "Startup Cost": 0.14,
+                      "Total Cost": 8.16
+                    },
+                    {
+                      "Actual Loops": 1,
+                      "Actual Rows": 201,
+                      "Actual Startup Time": 0.031,
+                      "Actual Total Time": 0.519,
+                      "Async Capable": false,
+                      "Inner Unique": true,
+                      "Join Type": "Inner",
+                      "Node Type": "Nested Loop",
+                      "Parallel Aware": false,
+                      "Parent Relationship": "Inner",
+                      "Plan Rows": 2,
+                      "Plan Width": 94,
+                      "Plans": [
+                        {
+                          "Actual Loops": 1,
+                          "Actual Rows": 201,
+                          "Actual Startup Time": 0.019,
+                          "Actual Total Time": 0.307,
+                          "Alias": "submissions_submission",
+                          "Async Capable": false,
+                          "Filter": "((status)::text = ANY ('{matched,needs_verification}'::text[]))",
+                          "Node Type": "Seq Scan",
+                          "Parallel Aware": false,
+                          "Parent Relationship": "Outer",
+                          "Plan Rows": 201,
+                          "Plan Width": 86,
+                          "Relation Name": "submissions_submission",
+                          "Rows Removed by Filter": 430,
+                          "Startup Cost": 0.0,
+                          "Total Cost": 19.89
+                        },
+                        {
+                          "Actual Loops": 201,
+                          "Actual Rows": 1,
+                          "Actual Startup Time": 0.001,
+                          "Actual Total Time": 0.001,
+                          "Async Capable": false,
+                          "Cache Evictions": 0,
+                          "Cache Hits": 200,
+                          "Cache Key": "submissions_submission.assessment_id",
+                          "Cache Misses": 1,
+                          "Cache Mode": "logical",
+                          "Cache Overflows": 0,
+                          "Node Type": "Memoize",
+                          "Parallel Aware": false,
+                          "Parent Relationship": "Inner",
+                          "Peak Memory Usage": 1,
+                          "Plan Rows": 1,
+                          "Plan Width": 16,
+                          "Plans": [
+                            {
+                              "Actual Loops": 1,
+                              "Actual Rows": 1,
+                              "Actual Startup Time": 0.008,
+                              "Actual Total Time": 0.008,
+                              "Alias": "assessments_assessment",
+                              "Async Capable": false,
+                              "Filter": "(archived_at IS NULL)",
+                              "Index Cond": "(id = submissions_submission.assessment_id)",
+                              "Index Name": "assessments_assessment_pkey",
+                              "Node Type": "Index Scan",
+                              "Parallel Aware": false,
+                              "Parent Relationship": "Outer",
+                              "Plan Rows": 1,
+                              "Plan Width": 16,
+                              "Relation Name": "assessments_assessment",
+                              "Rows Removed by Filter": 0,
+                              "Rows Removed by Index Recheck": 0,
+                              "Scan Direction": "Forward",
+                              "Startup Cost": 0.14,
+                              "Total Cost": 0.4
+                            }
+                          ],
+                          "Startup Cost": 0.15,
+                          "Total Cost": 0.41
+                        }
+                      ],
+                      "Startup Cost": 0.15,
+                      "Total Cost": 26.11
+                    }
+                  ],
+                  "Rows Removed by Join Filter": 0,
+                  "Startup Cost": 0.3,
+                  "Total Cost": 34.29
+                }
+              ],
+              "Sort Key": [
+                "submissions_submission.created_at",
+                "submissions_submission.id"
+              ],
+              "Sort Method": "top-N heapsort",
+              "Sort Space Type": "Memory",
+              "Sort Space Used": 38,
+              "Startup Cost": 34.3,
+              "Total Cost": 34.31
+            }
+          ],
+          "Startup Cost": 34.3,
+          "Total Cost": 34.31
+        },
+        "Planning Time": 0.392,
+        "Triggers": []
+      }
+    ]
+  },
+  "restore_matches_database_and_media": true,
+  "runtime": {
+    "django": "6.1",
+    "postgresql": "17",
+    "python": "3.12"
+  }
+}

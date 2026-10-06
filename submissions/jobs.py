@@ -7,6 +7,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from submissions.models import RecognitionJob, Submission, SubmissionAudit
+from students.models import Enrollment
 from submissions.recognition.service import recognize_submission
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,7 @@ def _transition_processing(job, new_status, *, enrollment=None, reason):
     # The job lock is already held. Replacement also locks job before submission.
     submission = (
         Submission.objects.active()
+        .select_related("assessment__course")
         .select_for_update(of=("self",))
         .filter(
             pk=job.submission_id,
@@ -184,6 +186,21 @@ def _transition_processing(job, new_status, *, enrollment=None, reason):
         .first()
     )
     if submission is not None:
+        if enrollment is not None:
+            # Lock submission before enrollment, matching deletion's FK-clear order.
+            enrollment = (
+                Enrollment.objects.select_related("student")
+                .select_for_update(of=("self",))
+                .filter(
+                    pk=enrollment.pk,
+                    course_id=submission.assessment.course_id,
+                    student__owner_id=submission.assessment.course.owner_id,
+                )
+                .first()
+            )
+            if enrollment is None:
+                new_status = Submission.Status.NEEDS_VERIFICATION
+                reason = "Recognition suggestion is no longer a valid class enrollment"
         submission.record_status_change(
             actor=None,
             new_status=new_status,

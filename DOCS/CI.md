@@ -46,3 +46,6 @@ See [release integration status](API_REFERENCE.md).
 
 
 Auth lifecycle and endpoint matrix regressions live in `accounts.test_lifecycle` and `accounts.test_permissions`. They use the migrated database throttle cache and token blacklist; run `python manage.py test accounts` against PostgreSQL to include concurrent refresh fencing. Migration creates the cache table; no separate createcachetable command is needed.
+
+
+Database review regressions: submissions.tests.test_integrity_review runs in the fast unit job and covers membership validation, deletion fencing, immutable audit identity and constant list query counts. Full integration includes migration coverage. tools/database_review.py is a separate guarded PostgreSQL/media drill, not a production seed or CI mail sender.

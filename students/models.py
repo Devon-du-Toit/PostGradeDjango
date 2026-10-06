@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.core.exceptions import ValidationError
 
 
@@ -25,6 +25,21 @@ class Student(models.Model):
                 name="unique_student_number_per_owner",
             )
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            with transaction.atomic():
+                current = Student.objects.select_for_update().filter(pk=self.pk).first()
+                if (
+                    current
+                    and current.owner_id != self.owner_id
+                    and self.enrollments.exists()
+                ):
+                    raise ValidationError(
+                        "Cannot transfer a student while course enrollments exist."
+                    )
+                return super().save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.student_number} - {self.first_name} {self.last_name}"
@@ -54,9 +69,29 @@ class Enrollment(models.Model):
 
     def clean(self):
         if self.course.owner_id != self.student.owner_id:
-            raise ValidationError(
-                "Student and course must belong to the same owner."
-            )
+            raise ValidationError("Student and course must belong to the same owner.")
+
+    def save(self, *args, **kwargs):
+        from courses.models import Course
+
+        with transaction.atomic():
+            self.course = Course.objects.select_for_update().get(pk=self.course_id)
+            self.student = Student.objects.select_for_update().get(pk=self.student_id)
+            self.clean()
+            if self.pk:
+                previous = (
+                    Enrollment.objects.select_for_update().filter(pk=self.pk).first()
+                )
+                if (
+                    previous
+                    and (previous.course_id, previous.student_id)
+                    != (self.course_id, self.student_id)
+                    and self.submissions.exists()
+                ):
+                    raise ValidationError(
+                        "A referenced enrollment cannot be reassigned."
+                    )
+            return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.student} enrolled in {self.course}"

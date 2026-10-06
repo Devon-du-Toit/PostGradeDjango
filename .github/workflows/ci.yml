@@ -60,6 +60,7 @@ jobs:
             submissions.tests.test_bubble_recognition \
             submissions.tests.test_bubble_workflow \
             submissions.tests.test_audit \
+            submissions.tests.test_integrity_review \
             submissions.tests.test_emailing \
             submissions.tests.test_submissions \
             submissions.tests.test_verification

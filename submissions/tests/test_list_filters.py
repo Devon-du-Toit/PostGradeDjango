@@ -51,7 +51,12 @@ class SubmissionListFilterTests(Base):
         self.s_verified = self._submission(self.assess_a, Submission.Status.VERIFIED, self.enr_jones)
         self.s_processing = self._submission(self.assess_a, Submission.Status.PROCESSING)
         self.s_failed = self._submission(self.assess_a, Submission.Status.RECOGNITION_FAILED)
-        self.s_other_course = self._submission(self.assess_a2, Submission.Status.MATCHED, self.enr_jones)
+        # The same student can join both courses; a submission must use its
+        # assessment course's enrollment, rather than the first course's link.
+        other_enrollment = Enrollment.objects.create(
+            course=self.course_a2, student=self.enr_jones.student
+        )
+        self.s_other_course = self._submission(self.assess_a2, Submission.Status.MATCHED, other_enrollment)
 
     def test_filter_by_single_status(self):
         r = self.client.get(LIST_URL, {"status": Submission.Status.MATCHED, "page_size": 20})
