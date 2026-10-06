@@ -189,7 +189,31 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
     ),
+    # Only the login and register views throttle (accounts/throttles.py).
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.getenv("LOGIN_THROTTLE_RATE", "10/min"),
+        "register": os.getenv("REGISTER_THROTTLE_RATE", "5/hour"),
+    },
+    # Proxies in front of the app. 0 = trust only the socket address;
+    # behind the hosting proxy set 1, or every client shares one limit.
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "0")),
 }
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    },
+    # Shared by every web process, so a limit counts per client rather
+    # than per gunicorn worker. Created by `manage.py createcachetable`.
+    "throttle": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "throttle_cache",
+    },
+}
+
+# Self-registration: open in development, closed in production unless enabled.
+# With it closed, lecturer accounts are created in Django admin.
+ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", DEBUG)
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
 
