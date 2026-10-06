@@ -1,6 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from assessments.models import Result
 from assessments.serializers import ResultSerializer
@@ -22,6 +23,17 @@ from django.http import FileResponse, Http404
 from students.models import Enrollment
 from submissions.jobs import retry_recognition
 from submissions.verification import verify_submission
+
+
+class RecognitionMethodsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            "methods": [{"value": value, "label": label}
+                        for value, label in Submission.RecognitionMethod.choices],
+            "bubble_templates": ["nwu-eight-standard-1", "nwu-eight-compact-1"],
+        })
 
 
 class SubmissionListCreateView(generics.ListCreateAPIView):

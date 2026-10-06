@@ -255,3 +255,5 @@ The Vue.js frontend is maintained separately in the [PostGradeVue](https://githu
 ## License
 
 A license has not yet been specified.
+
+Bubble recognition and method selection: [guide](DOCS/BUBBLE_RECOGNITION.md). After updating, run migrations before starting web/recognition workers.

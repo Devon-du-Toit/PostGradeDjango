@@ -260,3 +260,6 @@ MAX_SUBMISSION_IMAGE_DIMENSION_PX = 6000
 # Class-list CSV import (students/csv_import.py).
 MAX_CSV_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 MAX_CSV_IMPORT_ROWS = 5000
+
+# Bubble matching is exact and requires eight unambiguous columns.
+BUBBLE_AUTO_MATCH_ENABLED = os.getenv("BUBBLE_AUTO_MATCH_ENABLED", "True").lower() == "true"

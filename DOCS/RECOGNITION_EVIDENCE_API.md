@@ -47,11 +47,11 @@ In scope:
 - The protected region-image endpoint.
 - The recognition retry endpoint and file replacement.
 - Error responses for these endpoints.
-- Examples for OCR recognition (implemented) and bubble recognition (planned format).
+- Examples for OCR and filled-bubble recognition.
 
 Out of scope:
 
-- Implementation of bubble recognition (Technical Specification, System Feature 6).
+- Recognition layouts beyond the versioned eight-column templates and independent physical-scan deployment acceptance.
 - Additional image-quality checks for orientation and cropped/missing
   sections (Technical Specification, System Feature 5). Existing checks
   already populate `quality_issues`.
@@ -211,7 +211,7 @@ When the image-quality check (Issue #3) rejects an image, recognition stops, `ou
 | `Image is too bright` | SF5 |
 | `Image contrast is too low` | SF5 |
 
-For all other outcomes the array is empty. Orientation (SF5-FR3) and cropped or missing student-number sections (SF5-FR4) are not yet detected.
+Bubble marker/lattice failures are reported as quality reasons. OCR orientation and cropped or missing text regions are not explicitly classified.
 
 ### 5.3 Confidence Types
 
@@ -320,6 +320,7 @@ Uploads a marked script for an assessment and queues it for background recogniti
 |---|---|---|---|
 | `assessment` | integer | Yes | Assessment the script belongs to. Must belong to one of the lecturer's courses. |
 | `file` | file | Yes | JPG, JPEG, PNG or PDF. |
+| `recognition_method` | string | No | `ocr` (default, handwritten digits) or `bubble` (filled marks only). Retained on retries. |
 
 **Processing**
 
@@ -753,7 +754,7 @@ After `POST /api/submissions/2/verify/` with `{"enrollment": 1}`, the submission
 
 ### 8.5 Bubble — Multi-Mark Column (Planned Format)
 
-Bubble recognition is not yet implemented. The following shows the evidence format a bubble implementation must produce. Column 4 has two filled bubbles, so position 4 of `raw_candidate` is `X` and the submission requires manual review.
+Bubble recognition is implemented; see [Bubble recognition](BUBBLE_RECOGNITION.md). The following shows an ambiguous reading. Column 4 has two filled bubbles, so position 4 of `raw_candidate` is `X` and the submission requires manual review.
 
 ```json
 {
@@ -859,11 +860,15 @@ All columns were read, but the image is blurred and the confidence is below the 
 | 02 | `no_match` does not distinguish "student not found" from "ambiguous match" (SF7-FR2). Requires the matching step to report its reason. | TBD |
 | 03 | Duplicate-match detection across a batch (SF7-FR3) is not yet recorded in evidence. | TBD |
 | 04 | Bubble recognition must not auto-match a `raw_candidate` containing `X`: the current fuzzy matching tolerates one differing character and could otherwise match it. | TBD |
-| 05 | Minimum confidence threshold for automatic matching is undefined (Technical Specification Issue 04; SF6-FR10 proposes 85% for `bubble_margin`). | TBD |
+| 05 | Bubble suggestions use the agreed clear-fill, competitor and margin rules in BUBBLE_RECOGNITION.md. `bubble_margin` is mark separation, not a probability; the proposed 85% confidence does not apply. | TBD |
 | 06 | Originals are now served by authenticated `/submissions/{id}/file/`; output is `download_url`. | Implemented (#22) |
-| 07 | Image-quality checking covers resolution, blur, exposure and contrast; orientation and cropped/missing sections (SF5-FR3/FR4) are not yet detected. `quality_issues` holds the check's human-readable reason rather than a stable code. | TBD |
+| 07 | OCR image-quality checking covers resolution, blur, exposure and contrast. Bubble recognition rectifies orientation/perspective and rejects missing registration markers. `quality_issues` holds the check's human-readable reason rather than a stable code. | TBD |
 | 08 | `raw_candidate` duplicates the first entry of `raw_candidates`. Kept to avoid breaking the API before the review meeting; removal is a breaking change to agree with the frontend. | TBD |
 | 09 | Originals and region images are cleaned up after committed deletion; old originals after replacement. No timed purge. | Implemented (#22) |
 | 10 | If a file is replaced while the old file's job is running, that job's recognition attempt may be recorded after the new job's, and briefly appear as the latest `recognition` until the new job completes. Submission status and enrollment are not affected. Requires linking each attempt to its job. | TBD |
 | 11 | Vue has processing/failed states and polling. Review-panel/retry integration and safe interrupted-upload retry still need final cross-repository validation. | Integration follow-up |
 | 12 | Generic `PATCH /api/submissions/{id}/` can still change `enrollment` outside the verify workflow (for example on a `marked` submission). Only the `processing` case is blocked here; workflow enforcement belongs to Issue #6. | TBD |
+
+## Bubble recognition release
+
+Filled-bubble decoding is implemented with versioned standard/compact eight-column templates. It never reads the writing boxes using OCR. See [Bubble recognition](BUBBLE_RECOGNITION.md) for capability discovery, per-column evidence, geometry, thresholds and validation limits. `template_version` and `column_scores` are additive evidence fields.
