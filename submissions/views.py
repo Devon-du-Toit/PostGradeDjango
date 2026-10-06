@@ -6,6 +6,12 @@ from assessments.models import Result
 from assessments.serializers import ResultSerializer
 from distribution.serializers import ResultEmailSerializer
 from distribution.services import schedule_result_email
+from submissions.filters import (
+    SUBMISSION_SEARCH_FIELDS,
+    VERIFICATION_QUEUE_STATUSES,
+    SubmissionFilter,
+    VerificationQueueFilter,
+)
 from submissions.models import Submission, SubmissionAudit
 from submissions.serializers import SubmissionSerializer
 
@@ -21,6 +27,8 @@ from submissions.verification import verify_submission
 class SubmissionListCreateView(generics.ListCreateAPIView):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = SubmissionFilter
+    search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
         return Submission.objects.filter(
@@ -28,7 +36,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
         ).prefetch_related(
             "recognition_attempts",
             "recognition_jobs",
-        )
+        ).order_by("-created_at", "-id")
 
     def perform_create(self, serializer):
         serializer.save()
@@ -180,18 +188,17 @@ class SubmissionVerificationQueueView(
 ):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = VerificationQueueFilter
+    search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
         return Submission.objects.filter(
             assessment__course__owner=self.request.user,
-            status__in=[
-                Submission.Status.NEEDS_VERIFICATION,
-                Submission.Status.MATCHED,
-            ],
+            status__in=VERIFICATION_QUEUE_STATUSES,
         ).prefetch_related(
             "recognition_attempts",
             "recognition_jobs",
-        ).order_by("created_at")
+        ).order_by("created_at", "id")
 
 class SubmissionRecognitionImageView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]

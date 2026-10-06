@@ -258,8 +258,8 @@ class SubmissionAPITests(TestCase):
         response = self.client.get("/api/submissions/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], own_submission.id)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], own_submission.id)
 
     def test_can_match_submission_to_enrollment(self):
         student = Student.objects.create(

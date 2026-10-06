@@ -113,7 +113,7 @@ class RecognitionEvidenceOwnerIsolationTests(
         response = self.client.get("/api/submissions/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(response.data["count"], 0)
 
     def test_other_user_verification_queue_excludes_evidence(self):
         self.client.force_authenticate(user=self.other_user)
@@ -123,7 +123,7 @@ class RecognitionEvidenceOwnerIsolationTests(
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(response.data["count"], 0)
 
     def test_owner_can_fetch_region_image(self):
         self.client.force_authenticate(user=self.owner)
