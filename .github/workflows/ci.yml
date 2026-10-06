@@ -66,6 +66,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check recognition dependency consistency
+        run: |
+          python -m pip check
+          python tools/check_recognition_runtime.py
+
       - name: Django system check
         run: python manage.py check
 
@@ -133,8 +138,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check recognition dependency consistency
+        run: |
+          python -m pip check
+          python tools/check_recognition_runtime.py
+
       # The whole suite, not a list of modules: a list silently skips every
       # test module added after it was written. This job already has the OCR
       # models, so tests that use real recognition run here too.
       - name: Run all tests (including OCR)
         run: python manage.py test
+
+      - name: Check held-out bubble regression metrics
+        run: python -m submissions.tests.evaluate_bubbles --seed 729163 --count 64 --check

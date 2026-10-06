@@ -36,7 +36,7 @@ Developer fixes are explicit: `python -m ruff check . --fix` and `python -m blac
 
 All production OCR/bubble/document/quality/matching entry points remain. find_student_number_text has no current production caller but is directly exercised by the OCR localization tests and remains a supported compatibility wrapper. get_ocr stays lazy; the existing fresh-interpreter startup regression verifies that importing the API does not load PaddleOCR. PDF/JPEG/PNG support and empty/corrupt PDF errors are retained; obsolete editing comments were removed.
 
-Source use confirms cv2 for bubble geometry/quality, NumPy for bubble scoring, PyMuPDF for PDF rasterization and Pillow for image handling. PaddleOCR/Paddle/PaddleX remain the OCR engine/runtime. The two declared OpenCV wheels share cv2; [#54](https://github.com/Devon-du-Toit/PostGradeDjango/issues/54) covers selecting a compatible single distribution in a clean worker environment with full OCR and bubble regressions. Runtime requirements.txt is unchanged in this refactor. Packages loaded indirectly through OCR/settings are not removed merely because a direct import search misses them.
+Source use confirms cv2 for bubble geometry/quality, NumPy for bubble scoring, PyMuPDF for PDF rasterization and Pillow for image handling. PaddleOCR/Paddle/PaddleX remain the OCR engine/runtime. The recognition runtime uses only opencv-contrib-python 4.10.0.84, as required by PaddleX. Docker/CI check installed distributions and the NumPy/OpenCV ABI before recognition. See [RECOGNITION_RUNTIME.md](RECOGNITION_RUNTIME.md) for the clean-environment review from #54. Packages loaded indirectly through OCR/settings are not removed merely because a direct import search misses them.
 
 ## Verification
 

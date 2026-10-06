@@ -1,0 +1,71 @@
+{
+  "review_date": "2026-10-07",
+  "environment": {
+    "os": "Windows",
+    "python": "3.12.14",
+    "fresh_venv": true
+  },
+  "requirements_sha256": "3c2d80a62fb609e39097e7c32b9b4fcb1864b1d2f83fcf377b4d1cbd0d542a06",
+  "runtime": {
+    "opencv_distributions": {
+      "opencv-contrib-python": "4.10.0.84"
+    },
+    "cv2": "4.10.0",
+    "numpy": "2.3.5",
+    "paddleocr": "3.7.0",
+    "paddlex": "3.7.2",
+    "paddlepaddle": "3.3.1",
+    "abi_and_png_smoke_check": "passed"
+  },
+  "pip_check": "passed",
+  "linux_python312_wheel_resolution": {
+    "packages": 98,
+    "opencv_distributions": {
+      "opencv-contrib-python": "4.10.0.84"
+    },
+    "execution_test": false
+  },
+  "bubble_metrics": {
+    "dataset": "held-out synthetic; not physical scans",
+    "seed": 729163,
+    "clear_samples": 64,
+    "exact": 64,
+    "manual_review": 0,
+    "exact_number_accuracy": 1.0,
+    "false_clear_readings": 0,
+    "false_clear_read_rate": 0.0,
+    "ambiguous_samples": 32,
+    "unsafe_clear_readings_on_ambiguous": 0
+  },
+  "supplied_pdf_regression": {
+    "count": 7,
+    "readings_identical_to_previous_headless_runtime": 7,
+    "identity_values_excluded": true
+  },
+  "runtime_guard_negative_checks": [
+    "missing wheel rejected",
+    "overlapping wheels rejected",
+    "unexpected version rejected"
+  ],
+  "docker_build": "not run; local Docker daemon unavailable",
+  "backend_tests": {
+    "count": 408,
+    "result": "passed",
+    "seconds": 689.203,
+    "real_ocr_modules": [
+      "test_recognition_integration",
+      "test_student_number_localization"
+    ],
+    "test_database": "isolated synthetic PostgreSQL 17"
+  },
+  "ocr_models": [
+    "PP-OCRv6_medium_det",
+    "PP-OCRv6_medium_rec"
+  ],
+  "checks": {
+    "ruff": "passed",
+    "black": "passed (183 Python files)",
+    "django_system_check": "passed",
+    "migration_drift": "none"
+  }
+}
