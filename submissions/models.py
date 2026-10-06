@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.conf import settings
 from django.db import models
@@ -79,6 +80,20 @@ class Submission(models.Model):
         default=0,
     )
 
+    def clean(self):
+        if self.enrollment_id is not None:
+            if (
+                self.enrollment.course_id != self.assessment.course_id
+                or self.enrollment.student.owner_id != self.assessment.course.owner_id
+            ):
+                raise ValidationError(
+                    "Enrollment must belong to the assessment course and owner."
+                )
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)
+
     def __str__(self):
         return self.original_filename
 
@@ -124,6 +139,16 @@ class Submission(models.Model):
             ):
                 raise ValueError("Identity corrections require a version and a reason.")
             if new_enrollment is not UNCHANGED and new_enrollment is not None:
+                new_enrollment = (
+                    Enrollment.objects.select_related("student")
+                    .select_for_update(of=("self",))
+                    .filter(pk=new_enrollment.pk)
+                    .first()
+                )
+                if new_enrollment is None:
+                    raise ValueError(
+                        "Enrollment no longer exists. Reload and select a current student."
+                    )
                 if new_enrollment.course_id != locked.assessment.course_id:
                     raise ValueError(
                         "Enrollment must belong to the submission's course."
@@ -229,6 +254,28 @@ class SubmissionAudit(models.Model):
         blank=True,
         related_name="+",
     )
+
+    previous_identity = models.JSONField(default=dict, blank=True)
+    new_identity = models.JSONField(default=dict, blank=True)
+
+    def save(self, *args, **kwargs):
+        from submissions.identity import enrollment_identity
+
+        if self._state.adding:
+            self.previous_identity = enrollment_identity(self.previous_enrollment)
+            self.new_identity = enrollment_identity(self.new_enrollment)
+        else:
+            stored = (
+                SubmissionAudit.objects.filter(pk=self.pk)
+                .values("previous_identity", "new_identity")
+                .first()
+            )
+            if stored and (
+                stored["previous_identity"] != self.previous_identity
+                or stored["new_identity"] != self.new_identity
+            ):
+                raise ValidationError("Audit identity snapshots cannot be changed.")
+        return super().save(*args, **kwargs)
 
     reason = models.TextField(
         blank=True,

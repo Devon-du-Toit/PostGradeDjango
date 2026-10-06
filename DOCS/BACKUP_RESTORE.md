@@ -1,77 +1,65 @@
-# Backup and Restore
+# Database and media backup/restore
 
-## What this covers
+A usable PostGrade backup includes PostgreSQL and private media together: original scripts, recognition crops and immutable script-email attachments. A database dump alone cannot recover those bytes. Freeze web writes and both workers (or use a documented coordinated database/storage snapshot) before capturing the pair. Record the code revision, schema/migration state, UTC capture time and file manifest. Resume only after both captures complete.
 
-How to back up and restore the PostGrade PostgreSQL database. Same steps work for local, staging, or production.
+## Capture
 
-The live demo of the restore process is waiting on a non production database to test against.
+Use a restricted PostgreSQL backup role and pg_dump/pg_restore compatible with the server version. Supply credentials through a protected pgpass file or platform secret; do not print passwords or embed them in commands/logs. Keep backups private/encrypted and limit access because they contain student and authentication data.
 
-## What you need
+PowerShell example (database variables and a new backup root must already be configured):
 
-pg_dump and pg_restore on the machine running the backup. They ship with PostgreSQL 17.
+```powershell
+$backupStamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+$dbArchive = Join-Path $backupRoot "postgrade_$backupStamp.dump"
+$mediaArchive = Join-Path $backupRoot "media_$backupStamp"
+if (Test-Path -LiteralPath $dbArchive) { throw 'Backup target already exists' }
+if (Test-Path -LiteralPath $mediaArchive) { throw 'Media target already exists' }
+& pg_dump --host=$env:DB_HOST --port=$env:DB_PORT --username=$env:DB_USER --format=custom --file=$dbArchive $env:DB_NAME
+if ($LASTEXITCODE -ne 0) { throw 'Database backup failed' }
+Copy-Item -LiteralPath $env:MEDIA_ROOT -Destination $mediaArchive -Recurse
+& pg_restore --list $dbArchive
+```
 
-Credentials for the source database.
+Listing the archive checks its inventory, not whether it is recoverable. Check file hashes and rehearse an actual restore. Store the dump, media tree/manifest and revision/schema metadata as one backup generation. Do not resume SMTP/recognition during capture; in-progress SMTP cannot be recalled or safely assumed undelivered.
 
-A target database for restore, with a user who can create tables.
+## Restore into a new isolated target
 
-Values below come from .env:
+Create a new empty database and a new media directory on a non-production target. Verify the resolved host/port/database/path before acting. Do not use --clean against a populated database and do not overwrite production as a test. Use pg_restore --exit-on-error; --no-owner is appropriate only when deliberately restoring under the target role and reviewing its grants.
 
-DB_NAME, default postgrade
-DB_USER, default postgrade_user
-DB_HOST, default localhost
-DB_PORT, default 5432 locally, 5433 in some setups
+```powershell
+& createdb --host=$restoreHost --port=$restorePort --username=$restoreUser $restoreDatabase
+if ($LASTEXITCODE -ne 0) { throw 'Target creation failed' }
+& pg_restore --host=$restoreHost --port=$restorePort --username=$restoreUser --dbname=$restoreDatabase --exit-on-error --no-owner $dbArchive
+if ($LASTEXITCODE -ne 0) { throw 'Restore failed' }
+if (Test-Path -LiteralPath $restoreMedia) { throw 'Media target must be new' }
+Copy-Item -LiteralPath $mediaArchive -Destination $restoreMedia -Recurse
+```
 
-## Backup
+Point Django DB_NAME/host/port and MEDIA_ROOT at the isolated restored pair. Use the matching code revision. Run check, showmigrations and the integrity audit; compare row counts, canonical row digests and SHA-256 media manifests. Test protected script/crop downloads and delivery preview/attachment bytes using a synthetic or approved test account. Keep outbound mail disabled and workers stopped. Do not replay queues blindly: restored sending/unknown deliveries can duplicate an SMTP message already accepted before the backup.
 
-### Plain SQL
+If upgrading the restored snapshot, take a new backup before migrate and execute the approved upgrade sequence. For recovery from a destructive migration, restore the database and media together with the matching pre-change code; reverse migrations cannot recreate discarded marks/results. Review signing/session secrets, restored token revocations and queued-work state before resuming users/workers. A historical dump may predate a logout/password reset, so production recovery needs an approved session-invalidation decision.
 
-Readable file. Good for small databases and when you want to inspect what is inside.
+## Reproducible synthetic drill
 
-pg_dump --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" --format=plain --file="backup_$(date +%Y%m%d_%H%M%S).sql" "$DB_NAME"
+The 2026-10-06 exercise is recorded in [DB_REVIEW.md](DB_REVIEW.md) and its evidence JSON. It used isolated postgrade_review_ scratch databases and media, verified fresh migrations, upgraded a pre-retirement fixture, dumped/restored it, and compared ten domain-table digests plus all three media hashes. It also verified restored protected file access and private email preview. No production data or outbound email was used.
 
-### Custom format
+For another drill, configure DEBUG=true, a new database name beginning postgrade_review_, a new MEDIA_ROOT whose final directory name begins postgrade_review_, and a synthetic SECRET_KEY. Create three empty databases: fresh, legacy and restore. Run normal migrate/check on fresh. Against the empty legacy database:
 
-Smaller, faster, and you can restore pieces of it. This is what I would use for anything real.
+```text
+python tools/database_review.py seed-legacy --output legacy-seed.json
+python manage.py migrate --noinput
+python tools/database_review.py measure --output measurements.json
+```
 
-pg_dump --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" --format=custom --file="backup_$(date +%Y%m%d_%H%M%S).dump" "$DB_NAME"
+Capture that database and media pair, restore into the separate empty target, then run:
 
-### Checking the backup file
+```text
+python manage.py check
+python manage.py showmigrations
+python manage.py audit_database_integrity --fail-on-invalid
+python tools/database_review.py manifest --output restored-manifest.json
+```
 
-pg_restore --list backup_YYYYMMDD_HHMMSS.dump | head
+Compare measurements.json's manifest with restored-manifest.json, including migration count, table digests and every file path/hash. The tool is a guarded synthetic loader, not a production-data import command. Keep scratch targets for inspection or remove only explicitly identified scratch resources after validation; never delete a computed production path.
 
-If it prints a list of objects, the file is fine.
-
-## Restore
-
-### Plain SQL
-
-psql --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" --dbname="$DB_NAME" --file="backup_YYYYMMDD_HHMMSS.sql"
-
-### Custom format
-
-If the target database is empty:
-
-pg_restore --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" --dbname="$DB_NAME" --clean --if-exists "backup_YYYYMMDD_HHMMSS.dump"
-
-The clean and if exists flags drop what is already there before recreating it. Only run this against a database you are allowed to overwrite.
-
-## How to demonstrate recovery
-
-1. Take a backup of the source database with the custom format.
-2. Create a fresh target database, for example postgrade_restore_test.
-3. Restore the backup into the target with pg_restore.
-4. Point Django at the target and run its checks:
-
-DB_NAME=postgrade_restore_test python manage.py check
-DB_NAME=postgrade_restore_test python manage.py showmigrations
-
-5. Compare row counts on a couple of tables:
-
-psql -d postgrade_restore_test -c "SELECT COUNT(*) FROM submissions_submission;"
-psql -d postgrade_restore_test -c "SELECT COUNT(*) FROM students_student;"
-
-6. Drop the target database.
-
-## Status
-
-The procedure is documented above. The live demo of steps 1 to 6 is waiting on a non production database that can be overwritten and dropped.
+An approved anonymized staging rehearsal, recovery-time/recovery-point objectives, backup scheduling/retention and recurring restore drills remain [#52](https://github.com/Devon-du-Toit/PostGradeDjango/issues/52) and deployment #14. A successful synthetic restore is evidence for this procedure, not proof of production recovery capacity.
