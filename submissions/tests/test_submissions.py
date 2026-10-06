@@ -271,6 +271,7 @@ class SubmissionAPITests(TestCase):
             f"/api/submissions/{submission.id}/",
             {
                 "enrollment": enrollment.id,
+                "version": 0,
             },
             format="json",
         )
@@ -639,6 +640,7 @@ class SubmissionAPITests(TestCase):
             f"/api/submissions/{submission.id}/",
             {
                 "enrollment": enrollment.id,
+                "version": 0,
             },
             format="json",
         )

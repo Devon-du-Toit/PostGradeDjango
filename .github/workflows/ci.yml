@@ -57,6 +57,7 @@ jobs:
       - name: Run fast unit tests
         run: |
           python manage.py test \
+            submissions.tests.test_audit \
             submissions.tests.test_emailing \
             submissions.tests.test_submissions \
             submissions.tests.test_verification
