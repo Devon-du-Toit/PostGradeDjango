@@ -47,5 +47,25 @@
     "overlapping wheels rejected",
     "unexpected version rejected"
   ],
-  "docker_build": "not run; local Docker daemon unavailable"
+  "docker_build": "not run; local Docker daemon unavailable",
+  "backend_tests": {
+    "count": 408,
+    "result": "passed",
+    "seconds": 689.203,
+    "real_ocr_modules": [
+      "test_recognition_integration",
+      "test_student_number_localization"
+    ],
+    "test_database": "isolated synthetic PostgreSQL 17"
+  },
+  "ocr_models": [
+    "PP-OCRv6_medium_det",
+    "PP-OCRv6_medium_rec"
+  ],
+  "checks": {
+    "ruff": "passed",
+    "black": "passed (183 Python files)",
+    "django_system_check": "passed",
+    "migration_drift": "none"
+  }
 }
