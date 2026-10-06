@@ -8,10 +8,12 @@ Current script-only workflow: upload → recognise → verify → email script. 
 |---|---|---|
 | POST | `auth/register/` | Create an account using email, password, first_name, last_name |
 | POST | `auth/login/` | Obtain access and refresh tokens using email/password |
-| POST | `auth/refresh/` | Refresh an access token |
+| POST | `auth/refresh/` | Rotate access/refresh pair; old refresh is revoked |
+| POST | `auth/logout/` | Revoke the supplied refresh token |
+| GET | `auth/registration-policy/` | Public registration_open boolean |
 | GET | `auth/me/` | Current account |
 
-Normal data endpoints are owner-scoped. Another owner's detail/action returns 404; invalid/other-owner related-object selections return 400. Role labels do not grant delegated course access. Registration does not accept an elevated role.
+Normal data endpoints are owner-scoped. Another owner's detail/action returns 404; invalid/other-owner related-object selections return 400. Role labels do not grant delegated course access. Registration does not accept an elevated role. Signup availability, client throttles, token expiry/revocation and deployment order are documented in [PERMISSIONS.md](PERMISSIONS.md).
 
 ## Courses, class lists and students
 

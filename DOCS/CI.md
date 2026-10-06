@@ -9,6 +9,7 @@ The CI pipeline is defined in .github/workflows/ci.yml. It runs on pushes/PRs ta
 Runs first. Mocks OCR / OpenCV / PaddleOCR.
 
 Tests:
+- accounts (lifecycle, role/owner permission matrix and concurrent refresh)
 - submissions.tests.test_audit
 - submissions.tests.test_emailing
 - submissions.tests.test_submissions
@@ -42,3 +43,6 @@ PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True skips the connectivity check on every
 `ruff format --check .` remains non-blocking until the separate format pass.
 Retarget/update stacked implementation PRs before relying on master checks.
 See [release integration status](API_REFERENCE.md).
+
+
+Auth lifecycle and endpoint matrix regressions live in `accounts.test_lifecycle` and `accounts.test_permissions`. They use the migrated database throttle cache and token blacklist; run `python manage.py test accounts` against PostgreSQL to include concurrent refresh fencing. Migration creates the cache table; no separate createcachetable command is needed.

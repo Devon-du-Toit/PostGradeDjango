@@ -1,12 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
-
 
 User = get_user_model()
 
 
+@override_settings(ALLOW_REGISTRATION=True)
 class RegistrationTests(APITestCase):
 
     def test_register_user(self):
@@ -142,9 +143,7 @@ class AuthenticationTests(APITestCase):
 
         access_token = login_response.data["access"]
 
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Bearer {access_token}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
 
         response = self.client.get(reverse("current_user"))
 
@@ -174,6 +173,7 @@ class AuthenticationTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
+
 
 class UserManagerTests(APITestCase):
 

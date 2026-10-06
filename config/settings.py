@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -50,6 +51,7 @@ INSTALLED_APPS = [
     # PostGrade apps
     "accounts",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
     "courses",
@@ -267,3 +269,26 @@ MAX_CSV_IMPORT_ROWS = 5000
 BUBBLE_AUTO_MATCH_ENABLED = (
     os.getenv("BUBBLE_AUTO_MATCH_ENABLED", "True").lower() == "true"
 )
+
+
+# Public signup stays available locally; deployments opt in explicitly.
+ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", DEBUG)
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "throttle": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "auth_throttle_cache",
+    },
+}
+LOGIN_THROTTLE_RATE = os.getenv("LOGIN_THROTTLE_RATE", "10/min")
+REGISTER_THROTTLE_RATE = os.getenv("REGISTER_THROTTLE_RATE", "5/hour")
+REFRESH_THROTTLE_RATE = os.getenv("REFRESH_THROTTLE_RATE", "30/min")
+LOGOUT_THROTTLE_RATE = os.getenv("LOGOUT_THROTTLE_RATE", "30/min")
+REST_FRAMEWORK["NUM_PROXIES"] = int(os.getenv("NUM_PROXIES", "0"))
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "CHECK_REVOKE_TOKEN": True,
+}
