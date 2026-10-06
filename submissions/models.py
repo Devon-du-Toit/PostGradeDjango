@@ -83,14 +83,6 @@ class Submission(models.Model):
         reason="",
         new_enrollment=None,
     ):
-        allowed = self.ALLOWED_TRANSITIONS.get(
-            self.status, set()
-        )
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal transition from {self.status} to {new_status}"
-            )
-
         with transaction.atomic():
             locked = (
                 Submission.objects
@@ -100,36 +92,36 @@ class Submission(models.Model):
             previous_status = locked.status
             previous_enrollment = locked.enrollment
 
+            allowed = self.ALLOWED_TRANSITIONS.get(previous_status, set())
+            if new_status not in allowed:
+                raise ValueError(
+                    f"Illegal transition from {previous_status} to {new_status}"
+                )
+
+            locked.status = new_status
+            locked.version += 1
+            if new_enrollment is not None:
+                locked.enrollment = new_enrollment
+            locked.save(
+                update_fields=["status", "enrollment", "version", "updated_at"]
+            )
+
             audit = SubmissionAudit.objects.create(
-                submission=self,
+                submission=locked,
                 actor=actor,
                 previous_status=previous_status,
                 new_status=new_status,
                 previous_enrollment=previous_enrollment,
-                new_enrollment=(
-                    new_enrollment
-                    if new_enrollment is not None
-                    else self.enrollment
-                ),
+                new_enrollment=locked.enrollment,
                 reason=reason,
             )
 
-            self.status = new_status
-            self.version = locked.version + 1
-            if new_enrollment is not None:
-                self.enrollment = new_enrollment
-                self.save(
-                    update_fields=[
-                        "status",
-                        "enrollment",
-                        "version",
-                        "updated_at",
-                    ]
-                )
-            else:
-                self.save(
-                    update_fields=["status", "version", "updated_at"]
-                )
+        # Callers serialize/use this instance after the transition. Keep it
+        # consistent with the row actually written, including its enrollment.
+        self.status = locked.status
+        self.enrollment = locked.enrollment
+        self.version = locked.version
+        self.updated_at = locked.updated_at
         return audit
 
     class Meta:
