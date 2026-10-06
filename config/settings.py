@@ -260,6 +260,12 @@ MAX_SUBMISSION_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
 MAX_SUBMISSION_PDF_PAGES = 20
 MAX_SUBMISSION_IMAGE_DIMENSION_PX = 6000
 
+# Export is built on temporary disk before sending headers; bounds cover raw bytes.
+MAX_SCRIPT_EXPORT_FILES = int(os.getenv("MAX_SCRIPT_EXPORT_FILES", "1000"))
+MAX_SCRIPT_EXPORT_BYTES = int(
+    os.getenv("MAX_SCRIPT_EXPORT_BYTES", str(512 * 1024 * 1024))
+)
+
 
 # Class-list CSV import (students/csv_import.py).
 MAX_CSV_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB

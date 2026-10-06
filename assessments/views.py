@@ -1,10 +1,47 @@
+import logging
+
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from assessments.export import build_script_archive
 from assessments.models import Assessment
 from assessments.serializers import AssessmentSerializer
 from courses.models import Course
+
+logger = logging.getLogger(__name__)
+
+
+class AssessmentScriptExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        assessment = get_object_or_404(
+            Assessment.objects.active(), pk=pk, course__owner=request.user
+        )
+        try:
+            archive = build_script_archive(assessment.submissions.all())
+        except OSError:
+            logger.exception("Could not build script archive for assessment %s", pk)
+            return Response(
+                {"detail": "Script export failed. Please try again later."}, status=503
+            )
+        if archive is None:
+            return Response(
+                {"detail": "This assessment has no uploaded scripts."}, status=404
+            )
+        response = FileResponse(
+            archive,
+            as_attachment=True,
+            filename=f"assessment-{pk}-scripts.zip",
+            content_type="application/zip",
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class CourseAssessmentListCreateView(generics.ListCreateAPIView):
