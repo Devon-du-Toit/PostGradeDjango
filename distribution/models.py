@@ -2,10 +2,11 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from assessments.models import Result
+from submissions.models import Submission
+from students.models import Enrollment
 
 
-class ResultEmail(models.Model):
+class ScriptEmail(models.Model):
     class Status(models.TextChoices):
         AWAITING_APPROVAL = (
             "awaiting_approval",
@@ -30,31 +31,36 @@ class ResultEmail(models.Model):
             "provider_error",
             "Mail server error",
         )
+        ATTACHMENT_UNAVAILABLE = (
+            "attachment_unavailable",
+            "Script attachment unavailable",
+        )
         DELIVERY_UNKNOWN = (
             "delivery_unknown",
             "Worker stopped while sending; delivery unknown",
         )
 
-    # Not yet sent, so a newer result version may still replace them.
-    UNSENT_STATUSES = [
-        Status.AWAITING_APPROVAL,
-        Status.QUEUED,
-        Status.FAILED,
-    ]
-
-    result = models.ForeignKey(
-        Result,
-        on_delete=models.CASCADE,
+    UNSENT_STATUSES = [Status.AWAITING_APPROVAL, Status.QUEUED, Status.FAILED]
+    # Null only for retained historical emails or deleted submissions.
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.SET_NULL,
         related_name="emails",
+        null=True,
+        blank=True,
     )
-
-    result_version = models.PositiveIntegerField()
-
-    # One email per result version: repeated requests reuse this record.
-    idempotency_key = models.CharField(
-        max_length=100,
-        unique=True,
+    enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.SET_NULL,
+        related_name="script_emails",
+        null=True,
+        blank=True,
     )
+    submission_version = models.PositiveIntegerField(default=0)
+    idempotency_key = models.CharField(max_length=100, unique=True)
+    # Immutable copy of the verified file: retries cannot attach a replacement.
+    attachment = models.FileField(upload_to="script-emails/%Y/%m/%d/", blank=True)
+    attachment_filename = models.CharField(max_length=255, blank=True)
 
     # Snapshot of exactly what will be (or was) sent, for review.
     recipient = models.EmailField(
@@ -131,7 +137,7 @@ class ResultEmail(models.Model):
         indexes = [
             models.Index(
                 fields=["status", "run_after"],
-                name="result_email_claim_idx",
+                name="script_email_claim_idx",
             ),
         ]
 

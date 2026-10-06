@@ -20,7 +20,6 @@ from submissions.recognition.types import RecognitionResult
 from submissions.verification import verify_submission
 from submissions.tests.helpers import make_pdf
 
-
 RECOGNIZE = "submissions.jobs.recognize_submission"
 
 NOT_MATCHED = RecognitionResult(
@@ -56,8 +55,6 @@ class RecognitionJobTestMixin:
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.enrollment = Enrollment.objects.create(
@@ -366,9 +363,7 @@ class UploadQueueTests(RecognitionJobTestMixin, TestCase):
         ):
             jobs.process_next_job()
 
-        detail = self.client.get(
-            f"/api/submissions/{response.data['id']}/"
-        )
+        detail = self.client.get(f"/api/submissions/{response.data['id']}/")
 
         self.assertEqual(
             detail.data["recognition_job"]["failure_reason"],
@@ -383,9 +378,7 @@ class RetryEndpointTests(RecognitionJobTestMixin, TestCase):
         super().setUp()
 
         self.submission = self.create_processing_submission()
-        self.url = (
-            f"/api/submissions/{self.submission.id}/retry-recognition/"
-        )
+        self.url = f"/api/submissions/{self.submission.id}/retry-recognition/"
 
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
@@ -491,6 +484,7 @@ class ReplacementUploadTests(RecognitionJobTestMixin, TestCase):
                     make_pdf(),
                     content_type="application/pdf",
                 ),
+                "version": self.submission.version,
                 **extra,
             },
             format="multipart",
@@ -549,20 +543,6 @@ class ReplacementUploadTests(RecognitionJobTestMixin, TestCase):
             Submission.Status.PROCESSING,
         )
 
-    def test_cannot_replace_marked_submission(self):
-        Submission.objects.filter(pk=self.submission.pk).update(
-            enrollment=self.enrollment,
-            status=Submission.Status.MARKED,
-        )
-
-        response = self.replace()
-
-        self.submission.refresh_from_db()
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(self.submission.status, Submission.Status.MARKED)
-        self.assertEqual(self.submission.original_filename, "old.pdf")
-
     def test_other_user_cannot_replace(self):
         self.client.force_authenticate(user=self.other_user)
 
@@ -615,7 +595,7 @@ class ProcessingEnrollmentGuardTests(RecognitionJobTestMixin, TestCase):
         )
         self.assertIsNone(self.submission.enrollment)
 
-    def test_can_set_enrollment_after_processing(self):
+    def test_generic_enrollment_edit_requires_verification(self):
         with patch(RECOGNIZE, return_value=NOT_MATCHED):
             jobs.process_next_job()
 
@@ -623,8 +603,8 @@ class ProcessingEnrollmentGuardTests(RecognitionJobTestMixin, TestCase):
 
         self.submission.refresh_from_db()
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(self.submission.enrollment, self.enrollment)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(self.submission.enrollment)
         # Generic edits no longer change the status.
         self.assertEqual(
             self.submission.status,

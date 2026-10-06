@@ -47,7 +47,7 @@ Out of scope: building and hosting the Vue frontend (see the frontend README, *E
 | #14 — environment-managed secrets, production settings, deployment checks, CORS and allowed hosts | 4, 6 |
 | #14 — health/readiness, structured logs without student-document contents, job/email failure visibility | 7 |
 | #14 — backups and rollback | 8, 9 |
-| #14 — staging upload → verification → marking with sandbox email | 10 |
+| #14 — staging upload → verification → script delivery with sandbox email | 10 |
 
 ---
 
@@ -72,7 +72,7 @@ One container image runs in three roles. The container command decides the role.
                    mail-worker ───────┘──▶ SMTP provider
 ```
 
-The workers take jobs from database tables (`RecognitionJob`, `ResultEmail`); there is no separate message broker. The web role and the recognition worker must see **the same media storage**: the web role saves uploads and serves downloads; the worker reads the upload and saves the recognition crop.
+The workers take jobs from database tables (`RecognitionJob`, `ScriptEmail`); there is no separate message broker. The web role and the recognition worker must see **the same media storage**: the web role saves uploads and serves downloads; the worker reads the upload and saves the recognition crop.
 
 ### 2.1 Image
 
@@ -161,7 +161,7 @@ All configuration comes from environment variables; nothing secret is committed.
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Only needed when the frontend is on a **different** domain. |
 | `DB_CONN_MAX_AGE` | `0` | Seconds to reuse database connections. Production: `60`. |
 | `MEDIA_ROOT` | `/data/media` in the image | Where uploads and crops are stored. |
-| `RESULT_EMAIL_RELEASE_POLICY` | `automatic` | `approval` holds emails until a lecturer approves them. |
+| `SCRIPT_EMAIL_RELEASE_POLICY` | `automatic` | `approval` holds emails until a lecturer approves them. |
 | `ALLOW_REGISTRATION` | value of `DEBUG` | Self-registration; leave off in production and create lecturers in Django admin. *(Added in #8.)* |
 | `LOGIN_THROTTLE_RATE`, `REGISTER_THROTTLE_RATE` | `10/min`, `5/hour` | *(Added in #8.)* |
 | `LOG_FORMAT`, `LOG_LEVEL` | `json` (when not DEBUG), `INFO` | |
@@ -347,10 +347,10 @@ docker compose logs -f recognition-worker mail-worker
 |---|---|---|
 | Recognition failed 3 times | Submission status `recognition_failed`; the submission's `recognition_job.failure_reason`; "retry recognition" action | `docker compose logs recognition-worker` ("Recognition job N failed on attempt M") |
 | Recognition stuck | Submission stays `processing` > 5 min | Restart the worker; the job is recovered when its lease expires (`DOCS/RECOGNITION_WORKER.md`, 5.2) |
-| Email not sent | `GET /api/assessments/{id}/result-emails/?status=failed`, with `failure_reason`; "retry" action | Django admin → *Result emails*, filter on status; `docker compose logs mail-worker` |
+| Email not sent | `GET /api/assessments/{id}/script-emails/?status=failed`, with `failure_reason`; "retry" action | Django admin → *Script emails*, filter on status; `docker compose logs mail-worker` |
 | Email provider down | Emails retry automatically, then show `failed` / `provider_error` | Same as above |
 
-Details: `DOCS/RECOGNITION_WORKER.md` (Section 5) and `DOCS/RESULT_EMAIL_DELIVERY.md` (Sections 5 and 6).
+Details: `DOCS/RECOGNITION_WORKER.md` (Section 5) and `DOCS/SCRIPT_EMAIL_DELIVERY.md` (Sections 5 and 6).
 
 ### 7.4 Scaling
 
@@ -420,8 +420,8 @@ Write migrations so they only add in one release and remove in a later one; then
 | 3 | Create a course, import the class list CSV (synthetic students) | Students listed |
 | 4 | Create an assessment and upload a synthetic script | Status `processing`, then `matched` or `needs_verification` within ~2 min |
 | 5 | Open the submission; check the crop and the suggested student | Evidence shown |
-| 6 | Verify the student, enter a mark | Status `marked` |
-| 7 | Check the sandbox inbox | One result email for that student |
+| 6 | Verify the student and select Email script | Status `verified`; delivery queued or awaiting approval |
+| 7 | Check the sandbox inbox | One script email for that student |
 | 8 | Open the app on a nested URL directly (e.g. `/courses/1`) and refresh | Page loads (SPA fallback) |
 | 9 | `check --deploy` | No warnings |
 
@@ -457,3 +457,7 @@ Use **synthetic** scripts and class lists only: invented names and student numbe
 | 03 | Media lives on one machine's volume. Managed or multi-machine hosting needs a shared file share or object storage. | Open |
 | 04 | The target environment (Section 3) needs team confirmation, and staging (Section 10) needs a hosting account and a sandbox email provider. | Open |
 | 05 | No alerting beyond an external uptime monitor; failed jobs and emails are visible but not pushed to anyone. | Open |
+
+## Script-only rollout
+
+This release removes numeric grading. Before applying its migrations, stop writes/workers and back up the database/media; deploy the matching Vue version. See [MARKS_REMOVAL.md](MARKS_REMOVAL.md). Snapshot attachments require shared persistent private storage for web and mail workers.

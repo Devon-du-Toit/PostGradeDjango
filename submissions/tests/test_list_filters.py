@@ -27,7 +27,7 @@ class Base(APITestCase):
         self.enr_jones = self._enrollment(self.alice, self.course_a, "1002", "Bob", "Jones")
 
     def _assessment(self, course, name):
-        return Assessment.objects.create(course=course, name=name, max_mark=100, weight=10)
+        return Assessment.objects.create(course=course, name=name)
 
     def _enrollment(self, owner, course, number, first, last):
         student = Student.objects.create(
@@ -48,7 +48,7 @@ class SubmissionListFilterTests(Base):
         self.client.force_authenticate(self.alice)
         self.s_matched = self._submission(self.assess_a, Submission.Status.MATCHED, self.enr_smith)
         self.s_needs = self._submission(self.assess_a, Submission.Status.NEEDS_VERIFICATION)
-        self.s_marked = self._submission(self.assess_a, Submission.Status.MARKED, self.enr_jones)
+        self.s_verified = self._submission(self.assess_a, Submission.Status.VERIFIED, self.enr_jones)
         self.s_processing = self._submission(self.assess_a, Submission.Status.PROCESSING)
         self.s_failed = self._submission(self.assess_a, Submission.Status.RECOGNITION_FAILED)
         self.s_other_course = self._submission(self.assess_a2, Submission.Status.MATCHED, self.enr_jones)
@@ -59,14 +59,14 @@ class SubmissionListFilterTests(Base):
         self.assertCountEqual(self._ids(r), [self.s_matched.id, self.s_other_course.id])
 
     def test_filter_by_comma_separated_status(self):
-        value = f"{Submission.Status.MATCHED},{Submission.Status.MARKED}"
+        value = f"{Submission.Status.MATCHED},{Submission.Status.VERIFIED}"
         r = self.client.get(LIST_URL, {"status": value, "page_size": 20})
         self.assertEqual(r.status_code, 200)
-        self.assertCountEqual(self._ids(r), [self.s_matched.id, self.s_marked.id, self.s_other_course.id])
+        self.assertCountEqual(self._ids(r), [self.s_matched.id, self.s_verified.id, self.s_other_course.id])
 
     def test_filter_by_course(self):
         r = self.client.get(LIST_URL, {"course": self.course_a.id, "page_size": 20})
-        expected = [self.s_matched.id, self.s_needs.id, self.s_marked.id, self.s_processing.id, self.s_failed.id]
+        expected = [self.s_matched.id, self.s_needs.id, self.s_verified.id, self.s_processing.id, self.s_failed.id]
         self.assertCountEqual(self._ids(r), expected)
 
     def test_filter_by_assessment(self):
@@ -94,7 +94,7 @@ class SubmissionListFilterTests(Base):
         self.assertEqual(self._ids(r), [self.s_matched.id])
 
     def test_combination_with_no_matches_is_empty_200(self):
-        r = self.client.get(LIST_URL, {"course": self.course_a2.id, "status": Submission.Status.MARKED, "page_size": 20})
+        r = self.client.get(LIST_URL, {"course": self.course_a2.id, "status": Submission.Status.VERIFIED, "page_size": 20})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["results"], [])
 
@@ -117,7 +117,7 @@ class SubmissionListFilterTests(Base):
         submission_ids = [
             self.s_matched.id,
             self.s_needs.id,
-            self.s_marked.id,
+            self.s_verified.id,
             self.s_processing.id,
             self.s_failed.id,
             self.s_other_course.id,
@@ -171,12 +171,12 @@ class VerificationQueueTests(Base):
         self.client.force_authenticate(self.alice)
         self.s_needs = self._submission(self.assess_a, Submission.Status.NEEDS_VERIFICATION)
         self.s_matched = self._submission(self.assess_a, Submission.Status.MATCHED, self.enr_smith)
-        self.s_marked = self._submission(self.assess_a, Submission.Status.MARKED, self.enr_jones)
+        self.s_verified = self._submission(self.assess_a, Submission.Status.VERIFIED, self.enr_jones)
 
     def test_queue_only_contains_pending_statuses(self):
         r = self.client.get(QUEUE_URL, {"page_size": 10})
         self.assertCountEqual(self._ids(r), [self.s_needs.id, self.s_matched.id])
-        self.assertNotIn(self.s_marked.id, self._ids(r))
+        self.assertNotIn(self.s_verified.id, self._ids(r))
 
     def test_queue_filter_by_status_matched_only(self):
         r = self.client.get(QUEUE_URL, {"status": Submission.Status.MATCHED, "page_size": 10})
@@ -185,7 +185,7 @@ class VerificationQueueTests(Base):
     def test_queue_status_outside_pending_set_returns_400(self):
         # VerificationQueueFilter's choices only include needs_verification/matched,
         # so "marked" is an invalid choice for this specific filter field.
-        r = self.client.get(QUEUE_URL, {"status": Submission.Status.MARKED, "page_size": 10})
+        r = self.client.get(QUEUE_URL, {"status": Submission.Status.VERIFIED, "page_size": 10})
         self.assertEqual(r.status_code, 400)
 
     def test_queue_respects_owner_scoping(self):

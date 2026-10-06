@@ -18,20 +18,22 @@ class SubmissionQuerySet(models.QuerySet):
 
 class Submission(models.Model):
     objects = SubmissionQuerySet.as_manager()
+
     class RecognitionMethod(models.TextChoices):
         OCR = "ocr", "Handwritten digits (OCR)"
         BUBBLE = "bubble", "Filled bubbles"
 
     recognition_method = models.CharField(
-        max_length=20, choices=RecognitionMethod.choices,
+        max_length=20,
+        choices=RecognitionMethod.choices,
         default=RecognitionMethod.OCR,
     )
+
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         MATCHED = "matched", "Matched"
-        NEEDS_VERIFICATION = "needs_verification","Needs verification"
+        NEEDS_VERIFICATION = "needs_verification", "Needs verification"
         VERIFIED = "verified", "Verified"
-        MARKED = "marked", "Marked"
         PROCESSING = "processing", "Processing"
         RECOGNITION_FAILED = "recognition_failed", "Recognition failed"
 
@@ -77,6 +79,7 @@ class Submission(models.Model):
 
     def __str__(self):
         return self.original_filename
+
     # "processing" is also reached by retrying recognition and by replacing
     # the file; "recognition_failed" is left by retrying or verifying by hand.
     ALLOWED_TRANSITIONS = {
@@ -90,9 +93,9 @@ class Submission(models.Model):
         "matched": {"verified", "needs_verification", "processing"},
         "needs_verification": {"verified", "processing"},
         "recognition_failed": {"verified", "processing"},
-        "verified": {"verified", "marked", "processing"},
-        "marked": set(),
+        "verified": {"verified", "processing"},
     }
+
     def record_status_change(
         self,
         actor,
@@ -101,11 +104,7 @@ class Submission(models.Model):
         new_enrollment=None,
     ):
         with transaction.atomic():
-            locked = (
-                Submission.objects
-                .select_for_update()
-                .get(pk=self.pk)
-            )
+            locked = Submission.objects.select_for_update().get(pk=self.pk)
             previous_status = locked.status
             previous_enrollment = locked.enrollment
 
@@ -119,9 +118,7 @@ class Submission(models.Model):
             locked.version += 1
             if new_enrollment is not None:
                 locked.enrollment = new_enrollment
-            locked.save(
-                update_fields=["status", "enrollment", "version", "updated_at"]
-            )
+            locked.save(update_fields=["status", "enrollment", "version", "updated_at"])
 
             audit = SubmissionAudit.objects.create(
                 submission=locked,
@@ -150,7 +147,6 @@ class Submission(models.Model):
                         "matched",
                         "needs_verification",
                         "verified",
-                        "marked",
                         "processing",
                         "recognition_failed",
                     ]
@@ -158,6 +154,7 @@ class Submission(models.Model):
                 name="submission_status_valid",
             ),
         ]
+
 
 class SubmissionAudit(models.Model):
     """Records every status change on a Submission.
@@ -173,7 +170,7 @@ class SubmissionAudit(models.Model):
     )
 
     actor = models.ForeignKey(
-	settings.AUTH_USER_MODEL,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -231,7 +228,7 @@ class RecognitionAttempt(models.Model):
     class Method(models.TextChoices):
         OCR = "ocr", "OCR"
         BUBBLE = "bubble", "Bubble"
-    
+
     class Outcome(models.TextChoices):
         MATCHED = "matched", "Matched"
         NO_MATCH = "no_match", "No match"
@@ -359,6 +356,7 @@ class RecognitionAttempt(models.Model):
     def __str__(self):
         return f"{self.submission} - {self.method} - {self.outcome}"
 
+
 class RecognitionJob(models.Model):
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
@@ -441,4 +439,3 @@ class RecognitionJob(models.Model):
 
     def __str__(self):
         return f"{self.submission} - {self.status}"
-

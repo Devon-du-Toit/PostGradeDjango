@@ -1,38 +1,43 @@
 from django.urls import path
 
 from distribution.views import (
-    AssessmentResultEmailApproveView,
-    AssessmentResultEmailListView,
-    ResultEmailApproveView,
-    ResultEmailDetailView,
-    ResultEmailRetryView,
+    AssessmentScriptEmailApproveView,
+    AssessmentScriptEmailListView,
+    ScriptEmailApproveView,
+    ScriptEmailDetailView,
+    ScriptEmailRetryView,
+    SubmissionScriptEmailView,
 )
-
 
 urlpatterns = [
     path(
-        "assessments/<int:assessment_id>/result-emails/",
-        AssessmentResultEmailListView.as_view(),
-        name="assessment-result-email-list",
+        "submissions/<int:pk>/email/",
+        SubmissionScriptEmailView.as_view(),
+        name="submission-script-email",
     ),
     path(
-        "assessments/<int:assessment_id>/result-emails/approve/",
-        AssessmentResultEmailApproveView.as_view(),
-        name="assessment-result-email-approve",
+        "assessments/<int:assessment_id>/script-emails/",
+        AssessmentScriptEmailListView.as_view(),
+        name="assessment-script-email-list",
     ),
     path(
-        "result-emails/<int:pk>/",
-        ResultEmailDetailView.as_view(),
-        name="result-email-detail",
+        "assessments/<int:assessment_id>/script-emails/approve/",
+        AssessmentScriptEmailApproveView.as_view(),
+        name="assessment-script-email-approve",
     ),
     path(
-        "result-emails/<int:pk>/approve/",
-        ResultEmailApproveView.as_view(),
-        name="result-email-approve",
+        "script-emails/<int:pk>/",
+        ScriptEmailDetailView.as_view(),
+        name="script-email-detail",
     ),
     path(
-        "result-emails/<int:pk>/retry/",
-        ResultEmailRetryView.as_view(),
-        name="result-email-retry",
+        "script-emails/<int:pk>/approve/",
+        ScriptEmailApproveView.as_view(),
+        name="script-email-approve",
+    ),
+    path(
+        "script-emails/<int:pk>/retry/",
+        ScriptEmailRetryView.as_view(),
+        name="script-email-retry",
     ),
 ]

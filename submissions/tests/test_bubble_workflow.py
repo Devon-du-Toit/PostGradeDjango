@@ -19,7 +19,7 @@ class BubbleWorkflowTests(TemporaryMediaMixin, TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(email="bubble@example.invalid", password="testpass123")
         self.course = Course.objects.create(owner=self.user, code="BUB", name="Synthetic", year=2026, semester=1)
-        self.assessment = Assessment.objects.create(course=self.course, name="Synthetic", max_mark=100, weight=10)
+        self.assessment = Assessment.objects.create(course=self.course, name="Synthetic")
         self.student = Student.objects.create(owner=self.user, student_number="01234567", first_name="Synthetic", last_name="Student")
         self.enrollment = Enrollment.objects.create(course=self.course, student=self.student)
         self.client = APIClient()

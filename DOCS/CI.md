@@ -41,4 +41,4 @@ PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True skips the connectivity check on every
 `requirements-dev.txt` and runs `ruff check .` as an enforced check;
 `ruff format --check .` remains non-blocking until the separate format pass.
 Retarget/update stacked implementation PRs before relying on master checks.
-See [release integration status](API_REFERENCE.md#14-release-integration-status).
+See [release integration status](API_REFERENCE.md).

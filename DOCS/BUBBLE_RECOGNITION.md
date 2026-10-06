@@ -1,6 +1,6 @@
 # Filled-bubble student number recognition
 
-Choose `ocr` for handwritten digits, or `bubble` for filled bubbles when uploading a submission. Existing submissions and uploads that omit the method retain `ocr`. Bubble recognition never calls OCR, reads the writing boxes, extracts PDF text, or uses the QR code as an identity. The selected method persists across recognition retries. Replace an unmarked file to change its method.
+Choose `ocr` for handwritten digits, or `bubble` for filled bubbles when uploading a submission. Existing submissions and uploads that omit the method retain `ocr`. Bubble recognition never calls OCR, reads the writing boxes, extracts PDF text, or uses the QR code as an identity. The selected method persists across recognition retries. Replace a file using its current submission version to change its method.
 
 ## Algorithm and templates
 

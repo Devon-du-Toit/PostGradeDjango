@@ -1,12 +1,12 @@
 import django_filters
 
 from config.filters import ChoiceInFilter
-from distribution.models import ResultEmail
+from distribution.models import ScriptEmail
 
 
-class ResultEmailFilter(django_filters.FilterSet):
-    status = ChoiceInFilter(choices=ResultEmail.Status.choices)
+class ScriptEmailFilter(django_filters.FilterSet):
+    status = ChoiceInFilter(choices=ScriptEmail.Status.choices)
 
     class Meta:
-        model = ResultEmail
+        model = ScriptEmail
         fields = ["status"]

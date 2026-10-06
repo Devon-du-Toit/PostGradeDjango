@@ -34,6 +34,6 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
     def perform_destroy(self, instance):
-        # Courses are archived, never hard-deleted, so results,
+        # Courses are archived, never hard-deleted, so delivery history,
         # submissions and audit trails are kept.
         instance.archive()

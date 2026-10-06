@@ -16,7 +16,7 @@ x-app-environment: &app-environment
   DB_HOST: db
   DB_PORT: "5432"
   DB_CONN_MAX_AGE: "60"
-  RESULT_EMAIL_RELEASE_POLICY: ${RESULT_EMAIL_RELEASE_POLICY:-automatic}
+  SCRIPT_EMAIL_RELEASE_POLICY: ${SCRIPT_EMAIL_RELEASE_POLICY:-automatic}
 
 services:
   db:
@@ -78,6 +78,8 @@ services:
     image: postgrade-backend:local
     command: python manage.py run_mail_worker
     environment: *app-environment
+    volumes:
+      - media:/data/media
     depends_on:
       migrate:
         condition: service_completed_successfully

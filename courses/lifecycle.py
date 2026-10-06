@@ -8,7 +8,7 @@ def stop_archived_work(**submission_scope):
     fencing check discards its result after cancellation. SMTP already in
     progress is not recalled; its delivery outcome remains recorded.
     """
-    from distribution.models import ResultEmail
+    from distribution.models import ScriptEmail
     from submissions.models import RecognitionJob
 
     now = timezone.now()
@@ -21,11 +21,11 @@ def stop_archived_work(**submission_scope):
         finished_at=now,
         updated_at=now,
     )
-    ResultEmail.objects.filter(
-        **{f"result__{key}": value for key, value in submission_scope.items()},
-        status__in=ResultEmail.UNSENT_STATUSES,
+    ScriptEmail.objects.filter(
+        **{f"submission__{key}": value for key, value in submission_scope.items()},
+        status__in=ScriptEmail.UNSENT_STATUSES,
     ).update(
-        status=ResultEmail.Status.SUPERSEDED,
+        status=ScriptEmail.Status.SUPERSEDED,
         lease_expires_at=None,
         updated_at=now,
     )

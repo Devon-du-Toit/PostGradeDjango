@@ -288,8 +288,8 @@ class SubmissionFileValidationAPITests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
+
+
         )
 
         self.client.force_authenticate(user=self.user)

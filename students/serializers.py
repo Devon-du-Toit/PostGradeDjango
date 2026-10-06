@@ -43,6 +43,12 @@ class StudentSerializer(serializers.ModelSerializer):
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
+    student_number = serializers.CharField(
+        source="student.student_number", read_only=True
+    )
+    first_name = serializers.CharField(source="student.first_name", read_only=True)
+    last_name = serializers.CharField(source="student.last_name", read_only=True)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["course"].queryset = Course.objects.active()
@@ -54,6 +60,9 @@ class EnrollmentSerializer(serializers.ModelSerializer):
             "course",
             "student",
             "created_at",
+            "student_number",
+            "first_name",
+            "last_name",
         ]
         read_only_fields = [
             "id",

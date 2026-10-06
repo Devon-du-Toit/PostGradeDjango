@@ -1,22 +1,23 @@
 from rest_framework import serializers
 
-from distribution.models import ResultEmail
+from distribution.models import ScriptEmail
 
 
-class ResultEmailSerializer(serializers.ModelSerializer):
+class ScriptEmailSerializer(serializers.ModelSerializer):
     student_number = serializers.CharField(
-        source="result.enrollment.student.student_number",
+        source="enrollment.student.student_number",
         read_only=True,
     )
 
     is_current = serializers.SerializerMethodField()
 
     class Meta:
-        model = ResultEmail
+        model = ScriptEmail
         fields = [
             "id",
-            "result",
-            "result_version",
+            "submission",
+            "submission_version",
+            "attachment_filename",
             "is_current",
             "student_number",
             "recipient",
@@ -35,4 +36,9 @@ class ResultEmailSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_is_current(self, email):
-        return email.result_version == email.result.version
+        return (
+            email.submission is not None
+            and email.submission.status == "verified"
+            and email.submission_version == email.submission.version
+            and email.enrollment_id == email.submission.enrollment_id
+        )

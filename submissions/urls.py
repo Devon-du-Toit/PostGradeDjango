@@ -5,16 +5,18 @@ from submissions.views import (
     SubmissionDetailView,
     SubmissionFileDownloadView,
     SubmissionListCreateView,
-    SubmissionMarkView,
     SubmissionRecognitionImageView,
     SubmissionRetryRecognitionView,
     SubmissionVerifyView,
     SubmissionVerificationQueueView,
 )
 
-
 urlpatterns = [
-    path("recognition-methods/", RecognitionMethodsView.as_view(), name="recognition-methods"),
+    path(
+        "recognition-methods/",
+        RecognitionMethodsView.as_view(),
+        name="recognition-methods",
+    ),
     path(
         "",
         SubmissionListCreateView.as_view(),
@@ -29,11 +31,6 @@ urlpatterns = [
         "<int:pk>/",
         SubmissionDetailView.as_view(),
         name="submission-detail",
-    ),
-    path(
-        "<int:pk>/mark/",
-        SubmissionMarkView.as_view(),
-        name="submission-mark",
     ),
     path(
         "<int:pk>/verify/",

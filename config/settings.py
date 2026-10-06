@@ -4,7 +4,6 @@ from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
@@ -16,7 +15,9 @@ def env_bool(name, default=False):
 
 def env_list(name, default=""):
     # Comma-separated environment value, e.g. "a.example.com,b.example.com".
-    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
+    return [
+        item.strip() for item in os.getenv(name, default).split(",") if item.strip()
+    ]
 
 
 # Every value below comes from the environment; the defaults are the local
@@ -27,7 +28,9 @@ def env_list(name, default=""):
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not SECRET_KEY:
-    raise ImproperlyConfigured("Set the SECRET_KEY environment variable (see .env.example).")
+    raise ImproperlyConfigured(
+        "Set the SECRET_KEY environment variable (see .env.example)."
+    )
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("DEBUG")
@@ -38,13 +41,12 @@ ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     # PostGrade apps
     "accounts",
     "rest_framework",
@@ -61,34 +63,34 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     # First, so probes skip host validation, redirects and authentication.
     "config.health.HealthCheckMiddleware",
-    'django.middleware.security.SecurityMiddleware',
+    "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
@@ -115,16 +117,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -132,9 +134,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -144,7 +146,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"  # collectstatic target (Django admin assets)
 
 
@@ -171,10 +173,10 @@ DEFAULT_FROM_EMAIL = os.getenv(
 # cannot block the mail worker.
 EMAIL_TIMEOUT = 30
 
-# "automatic": result emails are sent once a mark is saved.
-# "approval": result emails wait for lecturer approval before sending.
-RESULT_EMAIL_RELEASE_POLICY = os.getenv(
-    "RESULT_EMAIL_RELEASE_POLICY",
+# "automatic": an explicit email-script request queues delivery.
+# "approval": requested script emails wait for lecturer approval.
+SCRIPT_EMAIL_RELEASE_POLICY = os.getenv(
+    "SCRIPT_EMAIL_RELEASE_POLICY",
     "automatic",
 )
 
@@ -249,7 +251,7 @@ LOGGING = {
 
 
 # Submission file validation limits.
-# A submission is one student's whole marked script (returned to the
+# A submission is one student's whole script (returned to the
 # student), so several pages are allowed; recognition reads page 1.
 # These are not general-purpose document storage limits.
 MAX_SUBMISSION_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
@@ -262,4 +264,6 @@ MAX_CSV_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 MAX_CSV_IMPORT_ROWS = 5000
 
 # Bubble matching is exact and requires eight unambiguous columns.
-BUBBLE_AUTO_MATCH_ENABLED = os.getenv("BUBBLE_AUTO_MATCH_ENABLED", "True").lower() == "true"
+BUBBLE_AUTO_MATCH_ENABLED = (
+    os.getenv("BUBBLE_AUTO_MATCH_ENABLED", "True").lower() == "true"
+)

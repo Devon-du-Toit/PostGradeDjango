@@ -42,8 +42,6 @@ class VerifySubmissionTests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.student = Student.objects.create(
@@ -119,6 +117,7 @@ class VerifySubmissionTests(TestCase):
                 other_enrollment,
             )
 
+
 class SubmissionVerificationAPITests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -142,8 +141,6 @@ class SubmissionVerificationAPITests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.student = Student.objects.create(
@@ -151,7 +148,7 @@ class SubmissionVerificationAPITests(TestCase):
             student_number="12345678",
             first_name="Test",
             last_name="Student",
-            email="12345678@example.com"
+            email="12345678@example.com",
         )
 
         self.enrollment = Enrollment.objects.create(
@@ -255,19 +252,14 @@ class SubmissionVerificationAPITests(TestCase):
             status=Submission.Status.VERIFIED,
         )
 
-        response = self.client.get(
-            "/api/submissions/verification-queue/"
-        )
+        response = self.client.get("/api/submissions/verification-queue/")
 
         self.assertEqual(
             response.status_code,
             status.HTTP_200_OK,
         )
 
-        returned_ids = {
-            item["id"]
-            for item in response.data["results"]
-        }
+        returned_ids = {item["id"] for item in response.data["results"]}
 
         self.assertIn(
             self.submission.id,
@@ -301,8 +293,6 @@ class SubmissionVerificationAPITests(TestCase):
         other_assessment = Assessment.objects.create(
             course=other_course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         other_submission = Submission.objects.create(
@@ -312,77 +302,20 @@ class SubmissionVerificationAPITests(TestCase):
             status=Submission.Status.NEEDS_VERIFICATION,
         )
 
-        response = self.client.get(
-            "/api/submissions/verification-queue/"
-        )
+        response = self.client.get("/api/submissions/verification-queue/")
 
         self.assertEqual(
             response.status_code,
             status.HTTP_200_OK,
         )
 
-        returned_ids = {
-            item["id"]
-            for item in response.data["results"]
-        }
+        returned_ids = {item["id"] for item in response.data["results"]}
 
         self.assertNotIn(
             other_submission.id,
             returned_ids,
         )
 
-    def test_cannot_reverify_marked_submission(self):
-        self.submission.enrollment = self.enrollment
-        self.submission.status = Submission.Status.MARKED
-        self.submission.save(
-            update_fields=[
-                "enrollment",
-                "status",
-            ]
-        )
-
-        with self.assertRaises(ValidationError):
-            verify_submission(
-                self.submission,
-                self.enrollment,
-            )
-
-        self.submission.refresh_from_db()
-
-        self.assertEqual(
-            self.submission.status,
-            Submission.Status.MARKED,
-        )
-
-    def test_cannot_reverify_marked_submission_via_api(self):
-        self.submission.enrollment = self.enrollment
-        self.submission.status = Submission.Status.MARKED
-        self.submission.save(
-            update_fields=[
-                "enrollment",
-                "status",
-            ]
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{self.submission.id}/verify/",
-            {
-                "enrollment": self.enrollment.id,
-            },
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_400_BAD_REQUEST,
-        )
-
-        self.submission.refresh_from_db()
-
-        self.assertEqual(
-            self.submission.status,
-            Submission.Status.MARKED,
-        )
 
 class ConcurrentSubmissionWorkflowTests(TransactionTestCase):
     def setUp(self):
@@ -402,8 +335,6 @@ class ConcurrentSubmissionWorkflowTests(TransactionTestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Concurrent Test",
-            max_mark=100,
-            weight=20,
         )
 
         self.student = Student.objects.create(
@@ -426,6 +357,7 @@ class ConcurrentSubmissionWorkflowTests(TransactionTestCase):
             original_filename="concurrent-test.pdf",
             status=Submission.Status.VERIFIED,
         )
+
     def test_concurrent_verification_attempts_keep_valid_status(self):
         from concurrent.futures import ThreadPoolExecutor
         from django.db import close_old_connections

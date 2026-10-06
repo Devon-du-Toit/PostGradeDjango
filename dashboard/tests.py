@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from assessments.models import Assessment, Result
+from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
 from submissions.models import Submission
@@ -72,50 +72,31 @@ class DashboardTestData:
         cls.test_one = Assessment.objects.create(
             course=cls.course,
             name="Class Test 1",
-            max_mark=Decimal("50.00"),
-            weight=Decimal("10.00"),
             date=datetime.date(2026, 9, 1),
         )
         cls.test_two = Assessment.objects.create(
             course=cls.course,
             name="Class Test 2",
-            max_mark=Decimal("50.00"),
-            weight=Decimal("10.00"),
             date=datetime.date(2026, 9, 20),
         )
         cls.undated = Assessment.objects.create(
             course=cls.course,
             name="Project",
-            max_mark=Decimal("100.00"),
-            weight=Decimal("30.00"),
         )
         cls.other_assessment = Assessment.objects.create(
             course=cls.other_course,
             name="Essay",
-            max_mark=Decimal("50.00"),
-            weight=Decimal("10.00"),
         )
 
         statuses = [
             Submission.Status.MATCHED,
             Submission.Status.NEEDS_VERIFICATION,
-            Submission.Status.MARKED,
-            Submission.Status.MARKED,
+            Submission.Status.VERIFIED,
+            Submission.Status.VERIFIED,
         ]
         for enrollment, submission_status in zip(cls.enrollments, statuses):
             cls.add_submission(cls.test_one, submission_status, enrollment)
-        for enrollment in cls.enrollments[2:]:
-            Result.objects.create(
-                assessment=cls.test_one,
-                enrollment=enrollment,
-                mark=Decimal("35.00"),
-            )
         # Entered in the gradebook without a script.
-        Result.objects.create(
-            assessment=cls.test_one,
-            enrollment=cls.enrollments[0],
-            mark=Decimal("20.00"),
-        )
 
         for submission_status in [
             Submission.Status.NEEDS_VERIFICATION,
@@ -169,7 +150,7 @@ class DashboardStatsTests(DashboardTestData, TestCase):
         self.assertEqual(set(by_status), set(Submission.Status.values))
         self.assertEqual(by_status[Submission.Status.MATCHED], 1)
         self.assertEqual(by_status[Submission.Status.NEEDS_VERIFICATION], 1)
-        self.assertEqual(by_status[Submission.Status.MARKED], 2)
+        self.assertEqual(by_status[Submission.Status.VERIFIED], 2)
         self.assertEqual(by_status[Submission.Status.UPLOADED], 0)
 
     def test_new_lecturer_gets_zeros(self):
@@ -205,35 +186,28 @@ class DashboardAssessmentProgressTests(DashboardTestData, TestCase):
         self.assertEqual(names, ["Class Test 2", "Class Test 1", "Project"])
 
     def test_progress_counts(self):
-        row = next(
-            row for row in self.rows() if row["id"] == self.test_one.id
-        )
+        row = next(row for row in self.rows() if row["id"] == self.test_one.id)
 
         self.assertEqual(row["course_code"], "CMPG311")
         self.assertEqual(row["enrolled"], 4)
         self.assertEqual(row["submissions"], 4)
         self.assertEqual(
-            row["submissions_by_status"][Submission.Status.MARKED],
+            row["submissions_by_status"][Submission.Status.VERIFIED],
             2,
         )
         # Two marked scripts plus one mark entered without a script.
-        self.assertEqual(row["results_recorded"], 3)
 
     def test_assessment_without_scripts_has_zero_counts(self):
-        row = next(
-            row for row in self.rows() if row["id"] == self.undated.id
-        )
+        row = next(row for row in self.rows() if row["id"] == self.undated.id)
 
         self.assertEqual(row["enrolled"], 4)
         self.assertEqual(row["submissions"], 0)
-        self.assertEqual(row["results_recorded"], 0)
+
         self.assertEqual(set(row["submissions_by_status"].values()), {0})
 
     def test_other_owners_assessments_are_excluded_and_rejected(self):
         ids = {row["id"] for row in self.rows()}
-        response = self.client.get(
-            f"{self.url}?course={self.other_course.id}"
-        )
+        response = self.client.get(f"{self.url}?course={self.other_course.id}")
 
         self.assertNotIn(self.other_assessment.id, ids)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -254,8 +228,6 @@ class DashboardAssessmentProgressTests(DashboardTestData, TestCase):
             assessment = Assessment.objects.create(
                 course=self.course,
                 name=f"Extra {number}",
-                max_mark=Decimal("10.00"),
-                weight=Decimal("1.00"),
             )
             self.add_submission(assessment, Submission.Status.UPLOADED)
 

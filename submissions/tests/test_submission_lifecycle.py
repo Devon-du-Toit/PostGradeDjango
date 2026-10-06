@@ -11,6 +11,7 @@ retention, and storage-backend behaviour for submission files.
   (submission.file.path); it stages the file through the Storage
   API instead, so it keeps working on non-filesystem backends.
 """
+
 import pymupdf
 import io
 import shutil
@@ -32,6 +33,7 @@ from submissions.models import Submission
 from submissions.recognition.service import recognize_submission
 from submissions.recognition.types import ImageQualityResult
 
+
 def _make_valid_jpeg_bytes():
     # A flat/blank image fails quality.py's checks (no contrast,
     # no sharp edges), so this draws a simple grid to look enough
@@ -48,10 +50,12 @@ def _make_valid_jpeg_bytes():
     image.save(buffer, format="JPEG")
     return buffer.getvalue()
 
+
 def _make_valid_pdf_bytes():
     document = pymupdf.open()
     document.new_page(width=200, height=200)
     return document.tobytes()
+
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(prefix="postgrade-lifecycle-")
 
@@ -87,8 +91,6 @@ class SubmissionDeletionCleanupTests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
     def _make_submission(self):
@@ -110,17 +112,13 @@ class SubmissionDeletionCleanupTests(TestCase):
         self.client.force_authenticate(user=self.user)
         # Files are removed once the delete commits.
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.delete(
-                f"/api/submissions/{submission.id}/"
-            )
+            response = self.client.delete(f"/api/submissions/{submission.id}/")
 
         self.assertEqual(
             response.status_code,
             status.HTTP_204_NO_CONTENT,
         )
-        self.assertFalse(
-            Submission.objects.filter(pk=submission.id).exists()
-        )
+        self.assertFalse(Submission.objects.filter(pk=submission.id).exists())
         self.assertFalse(file_path.exists())
 
     def test_deleting_assessment_cascades_and_removes_file(self):
@@ -134,9 +132,7 @@ class SubmissionDeletionCleanupTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             self.assessment.delete()
 
-        self.assertFalse(
-            Submission.objects.filter(pk=submission.id).exists()
-        )
+        self.assertFalse(Submission.objects.filter(pk=submission.id).exists())
         self.assertFalse(file_path.exists())
 
     def test_other_user_cannot_delete_submission(self):
@@ -144,25 +140,19 @@ class SubmissionDeletionCleanupTests(TestCase):
         file_path = Path(submission.file.path)
 
         self.client.force_authenticate(user=self.other_user)
-        response = self.client.delete(
-            f"/api/submissions/{submission.id}/"
-        )
+        response = self.client.delete(f"/api/submissions/{submission.id}/")
 
         self.assertEqual(
             response.status_code,
             status.HTTP_404_NOT_FOUND,
         )
-        self.assertTrue(
-            Submission.objects.filter(pk=submission.id).exists()
-        )
+        self.assertTrue(Submission.objects.filter(pk=submission.id).exists())
         self.assertTrue(file_path.exists())
 
     def test_anonymous_user_cannot_delete_submission(self):
         submission = self._make_submission()
 
-        response = self.client.delete(
-            f"/api/submissions/{submission.id}/"
-        )
+        response = self.client.delete(f"/api/submissions/{submission.id}/")
 
         self.assertIn(
             response.status_code,
@@ -171,9 +161,7 @@ class SubmissionDeletionCleanupTests(TestCase):
                 status.HTTP_403_FORBIDDEN,
             ),
         )
-        self.assertTrue(
-            Submission.objects.filter(pk=submission.id).exists()
-        )
+        self.assertTrue(Submission.objects.filter(pk=submission.id).exists())
 
     def test_deleted_submission_file_is_no_longer_downloadable(self):
         submission = self._make_submission()
@@ -181,67 +169,11 @@ class SubmissionDeletionCleanupTests(TestCase):
 
         self.client.delete(f"/api/submissions/{submission.id}/")
 
-        response = self.client.get(
-            f"/api/submissions/{submission.id}/file/"
-        )
+        response = self.client.get(f"/api/submissions/{submission.id}/file/")
 
         self.assertEqual(
             response.status_code,
             status.HTTP_404_NOT_FOUND,
-        )
-
-    def test_deleting_a_marked_submission_does_not_remove_its_result(
-        self,
-    ):
-        # Result is keyed on (assessment, enrollment), not on
-        # Submission, so deleting the scan must never touch the
-        # recorded mark.
-        from decimal import Decimal
-
-        from assessments.models import Result
-        from students.models import Enrollment, Student
-
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="12345678",
-            first_name="Test",
-            last_name="Student",
-            email="student@example.com",
-        )
-        enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-        result = Result.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            mark=Decimal("80.00"),
-        )
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            status=Submission.Status.MARKED,
-            file=SimpleUploadedFile(
-                "paper.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="paper.pdf",
-        )
-
-        self.client.force_authenticate(user=self.user)
-        # Files are removed once the delete commits.
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.delete(
-                f"/api/submissions/{submission.id}/"
-            )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_204_NO_CONTENT,
-        )
-        self.assertTrue(
-            Result.objects.filter(pk=result.pk).exists()
         )
 
 
@@ -271,8 +203,6 @@ class SubmissionFileReplacementTests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.submission = Submission.objects.create(
@@ -287,7 +217,7 @@ class SubmissionFileReplacementTests(TestCase):
 
         self.client.force_authenticate(user=self.user)
 
-    def test_can_replace_file_on_unmarked_submission(self):
+    def test_can_replace_file_with_current_version(self):
         old_storage = self.submission.file.storage
         old_name = self.submission.file.name
         self.assertTrue(old_storage.exists(old_name))
@@ -302,7 +232,7 @@ class SubmissionFileReplacementTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.patch(
                 f"/api/submissions/{self.submission.id}/",
-                {"file": replacement_file},
+                {"file": replacement_file, "version": self.submission.version},
                 format="multipart",
             )
 
@@ -318,11 +248,7 @@ class SubmissionFileReplacementTests(TestCase):
             self.submission.file.name,
             old_name,
         )
-        self.assertTrue(
-            self.submission.file.storage.exists(
-                self.submission.file.name
-            )
-        )
+        self.assertTrue(self.submission.file.storage.exists(self.submission.file.name))
         self.assertFalse(old_storage.exists(old_name))
 
         # A new file invalidates any prior match.
@@ -332,36 +258,7 @@ class SubmissionFileReplacementTests(TestCase):
             "replacement.pdf",
         )
 
-    def test_cannot_replace_file_on_marked_submission(self):
-        self.submission.status = Submission.Status.MARKED
-        self.submission.save(update_fields=["status"])
-
-        original_name = self.submission.file.name
-
-        replacement_file = SimpleUploadedFile(
-            "replacement.pdf",
-            b"different fake pdf content",
-            content_type="application/pdf",
-        )
-
-        response = self.client.patch(
-            f"/api/submissions/{self.submission.id}/",
-            {"file": replacement_file},
-            format="multipart",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_400_BAD_REQUEST,
-        )
-
-        self.submission.refresh_from_db()
-        self.assertEqual(
-            self.submission.file.name,
-            original_name,
-        )
-
-    def test_can_still_patch_enrollment_without_touching_file(self):
+    def test_generic_edit_cannot_change_verified_recipient(self):
         from students.models import Enrollment, Student
 
         student = Student.objects.create(
@@ -387,11 +284,11 @@ class SubmissionFileReplacementTests(TestCase):
 
         self.assertEqual(
             response.status_code,
-            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
         )
 
         self.submission.refresh_from_db()
-        self.assertEqual(self.submission.enrollment, enrollment)
+        self.assertIsNone(self.submission.enrollment)
 
 
 class SubmissionRecognitionStorageAgnosticTests(TestCase):
@@ -417,8 +314,6 @@ class SubmissionRecognitionStorageAgnosticTests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.submission = Submission.objects.create(
@@ -448,8 +343,7 @@ class SubmissionRecognitionStorageAgnosticTests(TestCase):
             new_callable=PropertyMock,
         ) as mock_path:
             mock_path.side_effect = NotImplementedError(
-                "This storage backend does not support "
-                "absolute paths."
+                "This storage backend does not support " "absolute paths."
             )
 
             # Should not raise, and should not touch .path at all.

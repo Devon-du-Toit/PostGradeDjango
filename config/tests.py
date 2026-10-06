@@ -8,9 +8,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from assessments.models import Assessment, Result
+from assessments.models import Assessment
 from courses.models import Course
-from distribution.services import schedule_result_email
 from students.models import Enrollment, Student
 from submissions.models import Submission
 
@@ -84,29 +83,13 @@ class ListAPITestData:
         cls.assessment = Assessment.objects.create(
             course=cls.course,
             name="Class Test 1",
-            max_mark=Decimal("50.00"),
-            weight=Decimal("10.00"),
         )
         Assessment.objects.create(
             course=cls.course,
             name="Exam",
-            max_mark=Decimal("100.00"),
-            weight=Decimal("50.00"),
         )
 
-        sipho_result = Result.objects.create(
-            assessment=cls.assessment,
-            enrollment=cls.sipho_enrollment,
-            mark=Decimal("40.00"),
-        )
-        anna_result = Result.objects.create(
-            assessment=cls.assessment,
-            enrollment=cls.anna_enrollment,
-            mark=Decimal("30.00"),
-        )
         # Sipho's email is queued; Anna has no address, so hers fails.
-        schedule_result_email(sipho_result)
-        schedule_result_email(anna_result)
 
     def setUp(self):
         self.client = APIClient()
@@ -205,16 +188,9 @@ class OrderingTests(ListAPITestData, TestCase):
 
     def test_students_and_results_by_student_number(self):
         students = self.get("/api/students/")["results"]
-        results = self.get(
-            f"/api/assessments/{self.assessment.id}/results/"
-        )["results"]
 
         self.assertEqual(
             [s["student_number"] for s in students],
-            ["30451234", "31112222"],
-        )
-        self.assertEqual(
-            [r["student_number"] for r in results],
             ["30451234", "31112222"],
         )
 
@@ -298,9 +274,7 @@ class ListFilterTests(ListAPITestData, TestCase):
         )
 
     def test_course_student_and_assessment_search(self):
-        students = self.get(
-            f"/api/courses/{self.course.id}/students/?search=anna"
-        )
+        students = self.get(f"/api/courses/{self.course.id}/students/?search=anna")
         assessments = self.get(
             f"/api/courses/{self.course.id}/assessments/?search=test"
         )
@@ -313,34 +287,6 @@ class ListFilterTests(ListAPITestData, TestCase):
             [a["name"] for a in assessments["results"]],
             ["Class Test 1"],
         )
-
-    def test_result_search_by_student(self):
-        data = self.get(
-            f"/api/assessments/{self.assessment.id}/results/?search=botha"
-        )
-
-        self.assertEqual(
-            [r["student_name"] for r in data["results"]],
-            ["Anna Botha"],
-        )
-
-    def test_result_email_status_filter_and_search(self):
-        url = f"/api/assessments/{self.assessment.id}/result-emails/"
-
-        failed = self.get(f"{url}?status=failed")
-        queued_or_sent = self.get(f"{url}?status=queued,sent")
-        by_recipient = self.get(f"{url}?search=sipho@")
-
-        self.assertEqual(
-            [e["student_number"] for e in failed["results"]],
-            ["31112222"],
-        )
-        self.assertEqual(
-            [e["student_number"] for e in queued_or_sent["results"]],
-            ["30451234"],
-        )
-        self.assertEqual(by_recipient["count"], 1)
-        self.assert_invalid(f"{url}?status=nope", "status")
 
 
 class ListQueryCountTests(ListAPITestData, TestCase):
@@ -357,8 +303,6 @@ class ListQueryCountTests(ListAPITestData, TestCase):
             "/api/enrollments/": 2,
             f"/api/courses/{self.course.id}/students/": 3,
             f"/api/courses/{self.course.id}/assessments/": 3,
-            f"/api/assessments/{self.assessment.id}/results/": 3,
-            f"/api/assessments/{self.assessment.id}/result-emails/": 3,
             "/api/submissions/": 4,
             "/api/submissions/verification-queue/": 4,
         }
@@ -376,12 +320,6 @@ class ListQueryCountTests(ListAPITestData, TestCase):
                 course=self.course,
                 student=student,
             )
-            result = Result.objects.create(
-                assessment=self.assessment,
-                enrollment=enrollment,
-                mark=Decimal("25.00"),
-            )
-            schedule_result_email(result)
             Submission.objects.create(
                 assessment=self.assessment,
                 enrollment=enrollment,

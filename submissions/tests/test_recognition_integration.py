@@ -37,8 +37,8 @@ class RecognitionIntegrationTests(TemporaryMediaMixin, TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Class Test 1",
-            max_mark=20,
-            weight=10,
+
+
         )
 
         self.student = Student.objects.create(

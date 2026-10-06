@@ -93,11 +93,15 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
     ]
 
     def get_queryset(self):
-        return Enrollment.objects.filter(
-            course__owner=self.request.user,
-            course__archived_at__isnull=True,
-            student__owner=self.request.user,
-        ).order_by("course_id", "student__student_number", "id")
+        return (
+            Enrollment.objects.filter(
+                course__owner=self.request.user,
+                course__archived_at__isnull=True,
+                student__owner=self.request.user,
+            )
+            .select_related("student")
+            .order_by("course_id", "student__student_number", "id")
+        )
 
 
 class CourseStudentListView(generics.ListAPIView):
@@ -172,7 +176,8 @@ class StudentCSVImportView(generics.GenericAPIView):
                 apply_import_plan(request.user, course, plan)
             except CSVFileError as exc:
                 return Response(
-                    {"detail": exc.detail}, status=status.HTTP_404_NOT_FOUND,
+                    {"detail": exc.detail},
+                    status=status.HTTP_404_NOT_FOUND,
                 )
 
         return Response(
