@@ -52,9 +52,7 @@ Legend: **✓** allowed · **own** only objects the user owns (others → 404) �
 The Marker and Admin columns are identical to Lecturer on purpose: that is
 the current behaviour, written down so nobody assumes otherwise.
 
-**Delegated course access** (a marker working on a lecturer's course) is
-**not supported**. It needs a course-membership model and changes to every
-owner filter, so it is a follow-up [#46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46). Existing role labels retain owner-only capabilities until approved rules exist. Numeric marking and gradebooks were removed; marker is currently a legacy account label.
+**Delegated course access** is not supported. On 7 October 2026 the repository owner approved keeping owner-only API access for every role, separate Django staff administration, and no course delegation ([decision #46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46)). ADMIN, LECTURER and MARKER labels grant no cross-owner API privileges. Numeric marking and gradebooks were removed; marker remains a legacy account label. Any future delegation requires a new approved policy.
 
 ## Regression evidence
 
@@ -90,7 +88,7 @@ The Vue update coordinates with [Vue #5](https://github.com/Devon-du-Toit/PostGr
 
 ## Bounded follow-ups and review
 
-- [Backend #46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46): approved role restrictions, delegated membership and administrative cross-owner API policy.
+- [Backend #46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46) is resolved: the owner-only role policy above is approved and covered by the role/endpoint matrix tests.
 - Self-service recovery is implemented; enable only after approving frontend URL, SMTP configuration and worker scheduling as described in [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md).
 - [Vue #36](https://github.com/Devon-du-Toit/PostGradeVue/issues/36): decide HttpOnly refresh cookies, CORS/CSRF policy and coordination across tabs.
 
