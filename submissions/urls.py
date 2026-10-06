@@ -2,6 +2,9 @@ from django.urls import path
 
 from submissions.views import (
     RecognitionMethodsView,
+    ScriptPageFileView,
+    ScriptPageReviewView,
+    ScriptUploadFileView,
     SubmissionCorrectionView,
     SubmissionDetailView,
     SubmissionFileDownloadView,
@@ -13,6 +16,21 @@ from submissions.views import (
 )
 
 urlpatterns = [
+    path(
+        "<int:pk>/uploads/<int:upload_id>/file/",
+        ScriptUploadFileView.as_view(),
+        name="submission-upload-file",
+    ),
+    path(
+        "<int:pk>/pages/<int:page_id>/review/",
+        ScriptPageReviewView.as_view(),
+        name="submission-page-review",
+    ),
+    path(
+        "<int:pk>/pages/<int:page_id>/file/",
+        ScriptPageFileView.as_view(),
+        name="submission-page-file",
+    ),
     path(
         "recognition-methods/",
         RecognitionMethodsView.as_view(),

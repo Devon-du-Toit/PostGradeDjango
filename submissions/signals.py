@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from submissions.models import RecognitionAttempt, Submission
+from submissions.models import RecognitionAttempt, ScriptPage, ScriptUpload, Submission
 
 logger = logging.getLogger(__name__)
 
@@ -49,3 +49,12 @@ def delete_region_image(sender, instance, **kwargs):
         instance.region_image.name,
         f"recognition attempt {instance.pk}",
     )
+
+
+@receiver(post_delete, sender=ScriptPage)
+@receiver(post_delete, sender=ScriptUpload)
+def delete_script_page_file(sender, instance, **kwargs):
+    if instance.file:
+        delete_file_after_commit(
+            instance.file.storage, instance.file.name, f"script evidence {instance.pk}"
+        )

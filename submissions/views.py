@@ -49,9 +49,11 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
             .filter(
                 assessment__course__owner=self.request.user,
             )
+            .select_related("assessment")
             .prefetch_related(
                 "recognition_attempts",
                 "recognition_jobs",
+                "pages",
             )
             .order_by("-created_at", "-id")
         )
@@ -70,9 +72,11 @@ class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
             .filter(
                 assessment__course__owner=self.request.user,
             )
+            .select_related("assessment")
             .prefetch_related(
                 "recognition_attempts",
                 "recognition_jobs",
+                "pages",
             )
         )
 
@@ -145,9 +149,11 @@ class SubmissionVerificationQueueView(generics.ListAPIView):
                 assessment__course__owner=self.request.user,
                 status__in=VERIFICATION_QUEUE_STATUSES,
             )
+            .select_related("assessment")
             .prefetch_related(
                 "recognition_attempts",
                 "recognition_jobs",
+                "pages",
             )
             .order_by("created_at", "id")
         )
@@ -252,3 +258,67 @@ class SubmissionFileDownloadView(generics.GenericAPIView):
             as_attachment=True,
             filename=(submission.original_filename or submission.file.name),
         )
+
+
+class ScriptPageFileView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, page_id):
+        from submissions.models import ScriptPage
+
+        page = generics.get_object_or_404(
+            ScriptPage.objects.filter(
+                submission__in=Submission.objects.active().filter(
+                    assessment__course__owner=request.user
+                )
+            ),
+            submission_id=pk,
+            pk=page_id,
+        )
+        try:
+            return FileResponse(page.file.open("rb"), content_type="application/pdf")
+        except OSError:
+            raise Http404
+
+
+class ScriptPageReviewView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, page_id):
+        from submissions.qr import review_page
+
+        try:
+            submission = review_page(pk, page_id, request.data, request.user)
+        except ValueError as exc:
+            from rest_framework.exceptions import ValidationError as APIValidationError
+
+            raise APIValidationError(str(exc)) from exc
+        return Response(
+            SubmissionSerializer(submission, context={"request": request}).data
+        )
+
+
+class ScriptUploadFileView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, upload_id):
+        from submissions.models import ScriptUpload
+
+        upload = generics.get_object_or_404(
+            ScriptUpload.objects.filter(
+                assessment__in=Submission.objects.active()
+                .filter(pk=pk, assessment__course__owner=request.user)
+                .values("assessment_id"),
+                pages__submission_id=pk,
+            ).distinct(),
+            pk=upload_id,
+        )
+        try:
+            return FileResponse(
+                upload.file.open("rb"),
+                as_attachment=True,
+                filename="source-upload"
+                + upload.file.name[upload.file.name.rfind(".") :],
+            )
+        except OSError:
+            raise Http404

@@ -298,7 +298,7 @@ def measure(media):
                     "returned": len(response.data["results"]),
                 }
             )
-        assert [x["queries"] for x in counts[path]] == [4, 4, 4]
+        assert [x["queries"] for x in counts[path]] == [5, 5, 5]
     from rest_framework_simplejwt.tokens import AccessToken
 
     jwt_client = APIClient()
@@ -311,7 +311,7 @@ def measure(media):
             response = jwt_client.get(path, {"page_size": 25})
         assert response.status_code == 200
         jwt_counts[path] = len(queries)
-        assert len(queries) == 5
+        assert len(queries) == 6
     assert (
         client.get(f"/api/courses/{script.assessment.course_id}/gradebook/").status_code
         == 404

@@ -25,6 +25,10 @@ class Submission(models.Model):
         OCR = "ocr", "Handwritten digits (OCR)"
         BUBBLE = "bubble", "Filled bubbles"
 
+    qr_group_key = models.CharField(max_length=240, blank=True)
+    qr_metadata = models.JSONField(default=dict, blank=True)
+    qr_review_issues = models.JSONField(default=list, blank=True)
+
     recognition_method = models.CharField(
         max_length=20,
         choices=RecognitionMethod.choices,
@@ -185,6 +189,11 @@ class Submission(models.Model):
 
     class Meta:
         constraints = [
+            models.UniqueConstraint(
+                fields=["assessment", "qr_group_key"],
+                condition=~Q(qr_group_key=""),
+                name="unique_assessment_qr_group",
+            ),
             models.CheckConstraint(
                 condition=models.Q(
                     status__in=[
@@ -506,3 +515,45 @@ class RecognitionJob(models.Model):
 
     def __str__(self):
         return f"{self.submission} - {self.status}"
+
+
+class ScriptPage(models.Model):
+    upload = models.ForeignKey(
+        "ScriptUpload", on_delete=models.CASCADE, related_name="pages"
+    )
+    submission = models.ForeignKey(
+        Submission, on_delete=models.CASCADE, related_name="pages"
+    )
+    file = models.FileField(upload_to="script-pages/%Y/%m/%d/")
+    source_page = models.PositiveIntegerField()
+    source_filename = models.CharField(max_length=255)
+    qr_fields = models.JSONField(default=dict, blank=True)
+    qr_status = models.CharField(max_length=32)
+    page_label = models.CharField(max_length=20, blank=True)
+    excluded = models.BooleanField(default=False)
+    review_history = models.JSONField(default=list, blank=True)
+    recognition_outcome = models.CharField(max_length=40, blank=True)
+    quality_issues = models.JSONField(default=list, blank=True)
+    suggested_enrollment = models.ForeignKey(
+        Enrollment, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    linked_enrollment = models.ForeignKey(
+        Enrollment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="script_pages",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+
+class ScriptUpload(models.Model):
+    assessment = models.ForeignKey(
+        Assessment, on_delete=models.CASCADE, related_name="script_uploads"
+    )
+    file = models.FileField(upload_to="script-uploads/%Y/%m/%d/")
+    original_filename = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)

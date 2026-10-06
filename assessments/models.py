@@ -17,6 +17,8 @@ class Assessment(models.Model):
         related_name="assessments",
     )
     name = models.CharField(max_length=255)
+    expected_qr_page_labels = models.JSONField(default=list, blank=True)
+    qr_test = models.CharField(max_length=80, blank=True)
 
     date = models.DateField(
         blank=True,
