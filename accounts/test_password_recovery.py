@@ -66,12 +66,15 @@ class PasswordRecoveryTests(TransactionTestCase):
         call_command("send_password_resets")
         self.assertEqual(len(mail.outbox), 1)
 
+    @override_settings(ALLOWED_HOSTS=["testserver", "evil.example"])
     def test_trusted_link_does_not_use_request_host_and_never_emails_password(self):
-        self.client.post(
+        response = self.client.post(
             "/api/auth/password-reset/",
             {"email": self.user.email},
             HTTP_HOST="evil.example",
         )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(PasswordResetRequest.objects.count(), 1)
         call_command("send_password_resets")
         self.assertEqual(len(mail.outbox), 1)
         link = next(
@@ -87,6 +90,18 @@ class PasswordRecoveryTests(TransactionTestCase):
             default_token_generator.check_token(self.user, query["token"][0])
         )
         self.assertNotIn("OldSyntheticPassword923!", mail.outbox[0].body)
+
+    @override_settings(ALLOWED_HOSTS=["testserver"])
+    def test_unapproved_request_host_is_rejected_before_recovery_is_queued(self):
+        response = self.client.post(
+            "/api/auth/password-reset/",
+            {"email": self.user.email},
+            HTTP_HOST="evil.example",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(PasswordResetRequest.objects.exists())
+        call_command("send_password_resets")
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_success_single_use_and_sessions_revoked(self):
         pair = self.client.post(
