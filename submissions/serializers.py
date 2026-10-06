@@ -13,6 +13,7 @@ from submissions.models import (
     RecognitionAttempt,
     RecognitionJob,
     Submission,
+    SubmissionAudit,
 )
 
 from submissions.signals import delete_file_after_commit
@@ -209,6 +210,13 @@ class SubmissionSerializer(serializers.ModelSerializer):
             assessment = lock_active_assessment(validated_data["assessment"].pk)
             validated_data["assessment"] = assessment
             submission = super().create(validated_data)
+            SubmissionAudit.objects.create(
+                submission=submission,
+                actor=self.context["request"].user,
+                previous_status=None,
+                new_status=submission.status,
+                reason="Submission uploaded for recognition",
+            )
             enqueue_recognition(submission)
 
         return submission
@@ -270,12 +278,16 @@ class SubmissionSerializer(serializers.ModelSerializer):
             old_storage, old_name = locked.file.storage, locked.file.name
             validated_data.update(
                 original_filename=validated_data["file"].name,
-                enrollment=None,
-                status=Submission.Status.PROCESSING,
-                version=locked.version + 1,
             )
             cancel_active_jobs(locked)
             supersede_submission_emails(locked)
+            locked.record_status_change(
+                actor=self.context["request"].user,
+                new_status=Submission.Status.PROCESSING,
+                new_enrollment=None,
+                reason="Submission file replaced",
+                expected_version=incoming_version,
+            )
             locked = super().update(locked, validated_data)
             enqueue_recognition(locked)
             if old_name and old_name != locked.file.name:
@@ -349,3 +361,13 @@ class SubmissionSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+
+class SubmissionTransitionSerializer(serializers.Serializer):
+    enrollment = serializers.IntegerField(min_value=1)
+    version = serializers.IntegerField(min_value=0, required=False)
+    reason = serializers.CharField(required=False, max_length=2000)
+
+
+class SubmissionRetrySerializer(serializers.Serializer):
+    version = serializers.IntegerField(min_value=0, required=False)
