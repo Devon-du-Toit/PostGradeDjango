@@ -1,6 +1,6 @@
 # PostgreSQL membership enforcement (#51)
 
-Migration `submissions.0015_database_membership_constraints` enforces two invariants for normal saves, `bulk_create`, `QuerySet.update` and ordinary SQL:
+Migration `submissions.0015_database_membership_constraints` enforces these invariants for normal saves, `bulk_create`, `QuerySet.update` and ordinary SQL:
 
 - An enrollment's student and course have the same owner.
 - A submission's enrollment, when present, belongs to its assessment's course.
