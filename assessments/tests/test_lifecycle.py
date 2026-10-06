@@ -1,5 +1,8 @@
 from decimal import Decimal
+from unittest.mock import patch
 
+from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
@@ -11,7 +14,13 @@ from assessments.models import Assessment, Result
 from courses.models import Course
 from students.models import Enrollment, Student
 from submissions.models import Submission
-from submissions.tests.helpers import TemporaryMediaMixin
+from submissions.models import RecognitionAttempt, RecognitionJob, SubmissionAudit
+from submissions.tests.helpers import TemporaryMediaMixin, make_pdf, make_png
+from submissions import jobs
+from distribution import dispatch
+from distribution.models import ResultEmail
+from distribution.services import approve_email, retry_email, schedule_result_email
+from students.csv_import import CSVFileError, apply_import_plan, build_import_plan
 
 
 def listed_ids(response):
@@ -230,3 +239,217 @@ class ArchiveTests(TemporaryMediaMixin, TestCase):
             response.data["students"][0]["course_percentage"],
             Decimal("50.00"),
         )
+
+    def archive_parent(self, parent):
+        return self.client.delete(
+            self.course_url() if parent == "course" else self.assessment_url()
+        )
+
+    def test_archived_parent_blocks_submission_reads_and_actions(self):
+        submission = self.make_submission()
+        submission.status = Submission.Status.NEEDS_VERIFICATION
+        submission.save(update_fields=["status"])
+        attempt = RecognitionAttempt.objects.create(
+            submission=submission, method=RecognitionAttempt.Method.OCR,
+            outcome=RecognitionAttempt.Outcome.NO_MATCH,
+        )
+        attempt.region_image.save("crop.png", ContentFile(make_png()))
+
+        for parent in ["assessment", "course"]:
+            with self.subTest(parent=parent):
+                self.archive_parent(parent)
+                base = f"/api/submissions/{submission.pk}/"
+                for method, path, data in [
+                    ("get", base, None),
+                    ("get", base + "file/", None),
+                    ("get", base + "recognition-image/", None),
+                    ("patch", base, {"version": 0}),
+                    ("delete", base, None),
+                    ("post", base + "verify/", {"enrollment": self.enrollment.pk}),
+                    ("post", base + "mark/", {"mark": 40}),
+                    ("post", base + "retry-recognition/", {}),
+                ]:
+                    with self.subTest(method=method, path=path):
+                        response = getattr(self.client, method)(path, data, format="json")
+                        self.assertEqual(response.status_code, 404)
+                for path in ["/api/submissions/", "/api/submissions/verification-queue/"]:
+                    self.assertNotIn(submission.pk, listed_ids(self.client.get(path)))
+                self.assertEqual(Submission.objects.count(), 1)
+                self.assertTrue(submission.file.storage.exists(submission.file.name))
+                self.assertTrue(attempt.region_image.storage.exists(attempt.region_image.name))
+                self.assertFalse(SubmissionAudit.objects.exists())
+                Assessment.objects.filter(pk=self.assessment.pk).update(archived_at=None)
+
+    def test_upload_to_archived_assessment_or_course_is_rejected(self):
+        for parent in ["assessment", "course"]:
+            with self.subTest(parent=parent):
+                self.archive_parent(parent)
+                response = self.client.post(
+                    "/api/submissions/",
+                    {"assessment": self.assessment.pk,
+                     "file": SimpleUploadedFile("test.pdf", make_pdf())},
+                    format="multipart",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("assessment", response.data)
+                self.assertFalse(Submission.objects.exists())
+                self.assertFalse(RecognitionJob.objects.exists())
+                Assessment.objects.filter(pk=self.assessment.pk).update(archived_at=None)
+
+    def test_archived_course_blocks_csv_and_enrollment_creation(self):
+        self.client.delete(self.course_url())
+        response = self.client.post(
+            f"/api/courses/{self.course.pk}/import-students/",
+            {"file": SimpleUploadedFile("class.csv", b"student_number,first_name,last_name,email\n222,New,Student,new@example.com\n")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(Student.objects.count(), 1)
+        for data in [None, {"search": "Alice"}]:
+            self.assertEqual(self.client.get(
+                f"/api/courses/{self.course.pk}/students/", data,
+            ).status_code, 404)
+        self.assertNotIn(self.enrollment.pk, listed_ids(self.client.get("/api/enrollments/")))
+        response = self.client.post(
+            "/api/enrollments/", {"course": self.course.pk, "student": self.student.pk},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Enrollment.objects.count(), 1)
+
+    def test_csv_plan_validated_before_archive_cannot_be_applied(self):
+        plan = build_import_plan(
+            self.user,
+            SimpleUploadedFile("class.csv", b"student_number,first_name,last_name,email\n222,New,Student,new@example.com\n"),
+            serializer_context={"request": type("Request", (), {"user": self.user})()},
+        )
+        self.course.archive()
+        with self.assertRaises(CSVFileError):
+            apply_import_plan(self.user, self.course, plan)
+        self.assertEqual(Student.objects.count(), 1)
+        self.assertEqual(Enrollment.objects.count(), 1)
+
+    def test_dashboard_excludes_archived_assessments_and_courses(self):
+        self.course.year = 2026
+        self.course.save(update_fields=["year"])
+        submission = self.make_submission()
+        submission.status = Submission.Status.NEEDS_VERIFICATION
+        submission.save(update_fields=["status"])
+        self.make_result()
+        self.assessment.archive()
+        response = self.client.get("/api/dashboard/stats/")
+        self.assertEqual(response.data["pending_verifications"], 0)
+        self.assertEqual(sum(response.data["submissions_by_status"].values()), 0)
+        self.assertNotIn(self.assessment.pk, listed_ids(self.client.get("/api/dashboard/assessments/")))
+        self.course.archive()
+        self.assertEqual(self.client.get("/api/dashboard/stats/").data["active_courses"], 0)
+
+    def test_filters_reject_archived_course_and_assessment_ids(self):
+        self.assessment.archive()
+        self.assertEqual(self.client.get("/api/submissions/", {"assessment": self.assessment.pk}).status_code, 400)
+        self.course.archive()
+        for path in ["/api/students/", "/api/enrollments/", "/api/submissions/", "/api/dashboard/assessments/"]:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path, {"course": self.course.pk}).status_code, 400)
+
+    def test_archived_result_emails_are_hidden_and_cannot_be_released(self):
+        result = self.make_result()
+        email = schedule_result_email(result)
+        for parent in ["assessment", "course"]:
+            with self.subTest(parent=parent):
+                self.archive_parent(parent)
+                base = f"/api/result-emails/{email.pk}/"
+                self.assertEqual(self.client.get(base).status_code, 404)
+                for path in [base + "approve/", base + "retry/",
+                             f"/api/assessments/{self.assessment.pk}/result-emails/approve/"]:
+                    self.assertEqual(self.client.post(path, {}).status_code, 404)
+                self.assertEqual(self.client.get(
+                    f"/api/assessments/{self.assessment.pk}/result-emails/",
+                ).status_code, 404)
+                with self.assertRaises(ValidationError):
+                    approve_email(email.pk, self.user)
+                with self.assertRaises(ValidationError):
+                    retry_email(email.pk)
+                self.assertTrue(Result.objects.filter(pk=result.pk).exists())
+                self.assertTrue(ResultEmail.objects.filter(pk=email.pk).exists())
+                Assessment.objects.filter(pk=self.assessment.pk).update(archived_at=None)
+
+    def test_archive_cancels_recognition_and_preserves_records(self):
+        submission = self.make_submission()
+        submission.status = Submission.Status.PROCESSING
+        submission.save(update_fields=["status"])
+        job = jobs.enqueue_recognition(submission)
+        audit = SubmissionAudit.objects.create(
+            submission=submission, previous_status="uploaded", new_status="processing",
+        )
+        self.assessment.archive()
+        job.refresh_from_db()
+        self.assertEqual(job.status, RecognitionJob.Status.CANCELLED)
+        self.assertIsNotNone(job.finished_at)
+        self.assertTrue(SubmissionAudit.objects.filter(pk=audit.pk).exists())
+        self.assertIsNone(jobs.claim_next_job())
+        with self.assertRaises(ValidationError):
+            jobs.retry_recognition(submission.pk)
+        with self.assertRaises(ValidationError):
+            jobs.enqueue_recognition(submission)
+
+    def test_running_recognition_cannot_apply_result_after_archive(self):
+        submission = self.make_submission()
+        submission.status = Submission.Status.PROCESSING
+        submission.save(update_fields=["status"])
+        jobs.enqueue_recognition(submission)
+        claimed = jobs.claim_next_job()
+        self.course.archive()
+        jobs.finish_job(claimed.pk, claimed.attempts, self.enrollment)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, Submission.Status.PROCESSING)
+        self.assertIsNone(submission.enrollment)
+        self.assertFalse(SubmissionAudit.objects.exists())
+
+    def test_archive_suppresses_queued_email_but_keeps_sent_history(self):
+        result = self.make_result()
+        queued = schedule_result_email(result)
+        sent = ResultEmail.objects.create(
+            result=result, result_version=1, idempotency_key="sent-history",
+            recipient=self.student.email, subject="Already sent", body="Result",
+            status=ResultEmail.Status.SENT,
+        )
+        self.course.archive()
+        queued.refresh_from_db()
+        sent.refresh_from_db()
+        self.assertEqual(queued.status, ResultEmail.Status.SUPERSEDED)
+        self.assertEqual(sent.status, ResultEmail.Status.SENT)
+        with patch("distribution.dispatch.EmailMessage.send") as send:
+            self.assertFalse(dispatch.process_next_email())
+        send.assert_not_called()
+        with self.assertRaises(ValidationError):
+            schedule_result_email(result)
+
+    def test_claimed_email_is_not_sent_if_archive_precedes_delivery(self):
+        email = schedule_result_email(self.make_result())
+        claimed = dispatch.claim_next_email()
+        self.assessment.archive()
+        with patch("distribution.dispatch.EmailMessage.send") as send:
+            dispatch.deliver_email(claimed, claimed.attempts)
+        send.assert_not_called()
+        email.refresh_from_db()
+        self.assertEqual(email.status, ResultEmail.Status.SUPERSEDED)
+
+    def test_archiving_one_assessment_keeps_other_workflows_active(self):
+        other = Assessment.objects.create(
+            course=self.course, name="Still active", max_mark=50, weight=20,
+        )
+        submission = self.make_submission(other)
+        submission.status = Submission.Status.PROCESSING
+        submission.save(update_fields=["status"])
+        job = jobs.enqueue_recognition(submission)
+        email = schedule_result_email(self.make_result(other))
+
+        self.assessment.archive()
+
+        job.refresh_from_db()
+        email.refresh_from_db()
+        self.assertEqual(job.status, RecognitionJob.Status.QUEUED)
+        self.assertEqual(email.status, ResultEmail.Status.QUEUED)
+        self.assertEqual(self.client.get(f"/api/submissions/{submission.pk}/").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/result-emails/{email.pk}/").status_code, 200)
+        self.assertIn(other.pk, listed_ids(self.client.get(self.assessment_list_url())))

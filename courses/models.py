@@ -1,9 +1,15 @@
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
+class CourseQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(archived_at__isnull=True)
+
+
 class Course(models.Model):
+    objects = CourseQuerySet.as_manager()
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, # points to the custom email-based user model
         on_delete=models.CASCADE, # deleting user also deletes courses
@@ -31,6 +37,10 @@ class Course(models.Model):
         return f"{self.code} - {self.name}"
 
     def archive(self):
-        if self.archived_at is None:
-            self.archived_at = timezone.now()
-            self.save(update_fields=["archived_at", "updated_at"])
+        from courses.lifecycle import stop_archived_work
+
+        with transaction.atomic():
+            if self.archived_at is None:
+                self.archived_at = timezone.now()
+                self.save(update_fields=["archived_at", "updated_at"])
+            stop_archived_work(assessment__course_id=self.pk)

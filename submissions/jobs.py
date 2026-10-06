@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from submissions.models import RecognitionJob, Submission
+from submissions.models import RecognitionJob, Submission, SubmissionAudit
 from submissions.recognition.service import recognize_submission
 
 
@@ -27,6 +27,8 @@ RETRYABLE_STATUSES = [
 
 
 def enqueue_recognition(submission):
+    if not Submission.objects.active().filter(pk=submission.pk).exists():
+        raise ValidationError("Archived submissions cannot be processed.")
     active_job = submission.recognition_jobs.filter(
         status__in=RecognitionJob.ACTIVE_STATUSES,
     ).first()
@@ -66,10 +68,12 @@ def claim_next_job():
     with transaction.atomic():
         job = (
             RecognitionJob.objects
-            .select_for_update(skip_locked=True)
+            .select_for_update(skip_locked=True, of=("self",))
             .filter(
                 status=RecognitionJob.Status.QUEUED,
                 run_after__lte=now,
+                submission__assessment__archived_at__isnull=True,
+                submission__assessment__course__archived_at__isnull=True,
             )
             .order_by("run_after")
             .first()
@@ -97,6 +101,9 @@ def claim_next_job():
 
 
 def run_job(job, claimed_attempt):
+    if not Submission.objects.active().filter(pk=job.submission_id).exists():
+        cancel_active_jobs(job.submission)
+        return
     try:
         result = recognize_submission(
             job.submission,
@@ -152,19 +159,56 @@ def finish_job(job_id, claimed_attempt, enrollment):
 
         # Only a submission still waiting on this job may be changed;
         # a verified or replaced submission keeps its current state.
-        Submission.objects.filter(
+        new_status = (
+            Submission.Status.MATCHED
+            if enrollment is not None
+            else Submission.Status.NEEDS_VERIFICATION
+        )
+        changed = Submission.objects.active().filter(
             pk=job.submission_id,
             status=Submission.Status.PROCESSING,
         ).update(
             enrollment=enrollment,
-            status=(
-                Submission.Status.MATCHED
-                if enrollment is not None
-                else Submission.Status.NEEDS_VERIFICATION
-            ),
+            status=new_status,
             updated_at=now,
         )
+        if changed:
+            _log_status_change(
+                submission_id=job.submission_id,
+                previous_status=Submission.Status.PROCESSING,
+                new_status=new_status,
+                new_enrollment=enrollment,
+                reason=(
+                    "Automatic recognition matched"
+                    if enrollment is not None
+                    else "Automatic recognition could not match"
+                ),
+            )
 
+
+
+def _log_status_change(
+    submission_id,
+    previous_status,
+    new_status,
+    new_enrollment=None,
+    reason="",
+):
+    """Write an audit row for a status change made outside record_status_change.
+
+    Used by the recognition worker, which writes status with a race-safe
+    .update() instead of record_status_change. The audit row records actor
+    (None, system), timestamps, and the status transition.
+    """
+    SubmissionAudit.objects.create(
+        submission_id=submission_id,
+        actor=None,
+        previous_status=previous_status,
+        new_status=new_status,
+        previous_enrollment=None,
+        new_enrollment=new_enrollment,
+        reason=reason,
+    )
 
 def retry_or_fail(job, error, delay, now):
     # Caller must hold the job's row lock.
@@ -178,13 +222,20 @@ def retry_or_fail(job, error, delay, now):
         job.status = RecognitionJob.Status.FAILED
         job.finished_at = now
 
-        Submission.objects.filter(
+        changed = Submission.objects.active().filter(
             pk=job.submission_id,
             status=Submission.Status.PROCESSING,
         ).update(
             status=Submission.Status.RECOGNITION_FAILED,
             updated_at=now,
         )
+        if changed:
+            _log_status_change(
+                submission_id=job.submission_id,
+                previous_status=Submission.Status.PROCESSING,
+                new_status=Submission.Status.RECOGNITION_FAILED,
+                reason="Automatic recognition failed",
+            )
 
     job.save(
         update_fields=[
@@ -262,6 +313,8 @@ def retry_recognition(submission_id):
         submission = Submission.objects.select_for_update().get(
             pk=submission_id,
         )
+        if not Submission.objects.active().filter(pk=submission_id).exists():
+            raise ValidationError("Archived submissions cannot be retried.")
 
         # Already queued or running: a repeated retry is a no-op.
         if submission.status == Submission.Status.PROCESSING:

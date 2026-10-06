@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from assessments.models import Assessment
+from distribution.filters import ResultEmailFilter
 from distribution.models import ResultEmail
 from distribution.serializers import ResultEmailSerializer
 from distribution.services import (
@@ -17,6 +18,8 @@ from distribution.services import (
 def owned_emails(user):
     return ResultEmail.objects.filter(
         result__assessment__course__owner=user,
+        result__assessment__archived_at__isnull=True,
+        result__assessment__course__archived_at__isnull=True,
     ).select_related(
         "result__enrollment__student",
     )
@@ -25,17 +28,24 @@ def owned_emails(user):
 class AssessmentResultEmailListView(generics.ListAPIView):
     serializer_class = ResultEmailSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = ResultEmailFilter
+    search_fields = [
+        "result__enrollment__student__student_number",
+        "result__enrollment__student__first_name",
+        "result__enrollment__student__last_name",
+        "recipient",
+    ]
 
     def get_queryset(self):
         assessment = get_object_or_404(
-            Assessment,
+            Assessment.objects.active(),
             pk=self.kwargs["assessment_id"],
             course__owner=self.request.user,
         )
 
         return owned_emails(self.request.user).filter(
             result__assessment=assessment,
-        )
+        ).order_by("-created_at", "-id")
 
 
 class ResultEmailDetailView(generics.RetrieveAPIView):
@@ -76,7 +86,7 @@ class AssessmentResultEmailApproveView(generics.GenericAPIView):
 
     def post(self, request, assessment_id):
         assessment = get_object_or_404(
-            Assessment,
+            Assessment.objects.active(),
             pk=assessment_id,
             course__owner=request.user,
         )

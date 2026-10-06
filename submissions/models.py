@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -7,7 +8,16 @@ from assessments.models import Assessment
 from students.models import Enrollment
 
 
+class SubmissionQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(
+            assessment__archived_at__isnull=True,
+            assessment__course__archived_at__isnull=True,
+        )
+
+
 class Submission(models.Model):
+    objects = SubmissionQuerySet.as_manager()
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         MATCHED = "matched", "Matched"
@@ -53,26 +63,74 @@ class Submission(models.Model):
         auto_now=True,
     )
 
+    version = models.PositiveIntegerField(
+        default=0,
+    )
+
     def __str__(self):
         return self.original_filename
+    # "processing" is also reached by retrying recognition and by replacing
+    # the file; "recognition_failed" is left by retrying or verifying by hand.
+    ALLOWED_TRANSITIONS = {
+        "uploaded": {"processing", "matched", "needs_verification"},
+        "processing": {
+            "matched",
+            "needs_verification",
+            "verified",
+            "recognition_failed",
+        },
+        "matched": {"verified", "needs_verification", "processing"},
+        "needs_verification": {"verified", "processing"},
+        "recognition_failed": {"verified", "processing"},
+        "verified": {"verified", "marked", "processing"},
+        "marked": set(),
+    }
     def record_status_change(
         self,
         actor,
         new_status,
         reason="",
+        new_enrollment=None,
     ):
-        previous_status = self.status
-        previous_enrollment = self.enrollment
+        with transaction.atomic():
+            locked = (
+                Submission.objects
+                .select_for_update()
+                .get(pk=self.pk)
+            )
+            previous_status = locked.status
+            previous_enrollment = locked.enrollment
 
-        audit = SubmissionAudit.objects.create(
-            submission=self,
-            actor=actor,
-            previous_status=previous_status,
-            new_status=new_status,
-            previous_enrollment=previous_enrollment,
-            new_enrollment=self.enrollment,
-            reason=reason,
-        )
+            allowed = self.ALLOWED_TRANSITIONS.get(previous_status, set())
+            if new_status not in allowed:
+                raise ValueError(
+                    f"Illegal transition from {previous_status} to {new_status}"
+                )
+
+            locked.status = new_status
+            locked.version += 1
+            if new_enrollment is not None:
+                locked.enrollment = new_enrollment
+            locked.save(
+                update_fields=["status", "enrollment", "version", "updated_at"]
+            )
+
+            audit = SubmissionAudit.objects.create(
+                submission=locked,
+                actor=actor,
+                previous_status=previous_status,
+                new_status=new_status,
+                previous_enrollment=previous_enrollment,
+                new_enrollment=locked.enrollment,
+                reason=reason,
+            )
+
+        # Callers serialize/use this instance after the transition. Keep it
+        # consistent with the row actually written, including its enrollment.
+        self.status = locked.status
+        self.enrollment = locked.enrollment
+        self.version = locked.version
+        self.updated_at = locked.updated_at
         return audit
 
     class Meta:

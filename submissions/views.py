@@ -6,7 +6,13 @@ from assessments.models import Result
 from assessments.serializers import ResultSerializer
 from distribution.serializers import ResultEmailSerializer
 from distribution.services import schedule_result_email
-from submissions.models import Submission
+from submissions.filters import (
+    SUBMISSION_SEARCH_FIELDS,
+    VERIFICATION_QUEUE_STATUSES,
+    SubmissionFilter,
+    VerificationQueueFilter,
+)
+from submissions.models import Submission, SubmissionAudit
 from submissions.serializers import SubmissionSerializer
 
 from django.core.exceptions import ValidationError
@@ -21,24 +27,26 @@ from submissions.verification import verify_submission
 class SubmissionListCreateView(generics.ListCreateAPIView):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = SubmissionFilter
+    search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
             "recognition_jobs",
-        )
+        ).order_by("-created_at", "-id")
 
     def perform_create(self, serializer):
         serializer.save()
 
-class SubmissionDetailView(generics.RetrieveUpdateAPIView):
+class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
@@ -54,7 +62,7 @@ class SubmissionMarkView(generics.GenericAPIView):
         with transaction.atomic():
             # Locked so a repeated request waits, then sees "marked".
             submission = generics.get_object_or_404(
-                Submission.objects.select_for_update().filter(
+                Submission.objects.active().select_for_update(of=("self",)).filter(
                     assessment__course__owner=request.user,
                 ),
                 pk=pk,
@@ -93,8 +101,19 @@ class SubmissionMarkView(generics.GenericAPIView):
                 assessment=submission.assessment,
             )
 
+            previous_status = submission.status
             submission.status = Submission.Status.MARKED
             submission.save(update_fields=["status"])
+
+            SubmissionAudit.objects.create(
+                submission=submission,
+                actor=request.user,
+                previous_status=previous_status,
+                new_status=Submission.Status.MARKED,
+                previous_enrollment=submission.enrollment,
+                new_enrollment=submission.enrollment,
+                reason="Result created",
+            )
 
             email = schedule_result_email(result)
 
@@ -116,7 +135,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
 
     def post(self, request, pk):
         submission = generics.get_object_or_404(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ),
             pk=pk,
@@ -143,6 +162,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
             verify_submission(
                 submission,
                 enrollment,
+                actor=request.user,
             )
         except ValidationError as exc:
             return Response(
@@ -168,25 +188,24 @@ class SubmissionVerificationQueueView(
 ):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = VerificationQueueFilter
+    search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
-            status__in=[
-                Submission.Status.NEEDS_VERIFICATION,
-                Submission.Status.MATCHED,
-            ],
+            status__in=VERIFICATION_QUEUE_STATUSES,
         ).prefetch_related(
             "recognition_attempts",
             "recognition_jobs",
-        ).order_by("created_at")
+        ).order_by("created_at", "id")
 
 class SubmissionRecognitionImageView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         submission = generics.get_object_or_404(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ),
             pk=pk,
@@ -210,7 +229,7 @@ class SubmissionRetryRecognitionView(generics.GenericAPIView):
 
     def post(self, request, pk):
         submission = generics.get_object_or_404(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ),
             pk=pk,
@@ -236,4 +255,48 @@ class SubmissionRetryRecognitionView(generics.GenericAPIView):
                 },
             ).data,
             status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class SubmissionFileDownloadView(generics.GenericAPIView):
+    """
+    Serves the original uploaded submission file.
+
+    Deliberately does NOT expose a raw MEDIA_URL path anywhere in
+    the API: the only way to reach the file's bytes is through
+    this endpoint, which enforces the same course-owner check used
+    everywhere else in this app. Requesting another lecturer's
+    submission id here returns 404, matching the existing pattern
+    (e.g. SubmissionMarkView) of not confirming another user's
+    object exists at all.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Submission.objects.active().filter(
+            assessment__course__owner=self.request.user,
+        )
+
+    def get(self, request, pk):
+        submission = generics.get_object_or_404(
+            self.get_queryset(),
+            pk=pk,
+        )
+
+        if not submission.file:
+            raise Http404
+
+        try:
+            file_handle = submission.file.open("rb")
+        except (FileNotFoundError, OSError):
+            raise Http404
+
+        return FileResponse(
+            file_handle,
+            as_attachment=True,
+            filename=(
+                submission.original_filename
+                or submission.file.name
+            ),
         )

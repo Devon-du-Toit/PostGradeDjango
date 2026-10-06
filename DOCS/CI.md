@@ -17,11 +17,7 @@ Tests:
 
 Runs only after unit passes. Downloads PaddleOCR models on first run (cached after).
 
-Tests:
-- submissions.tests.test_recognition_document
-- submissions.tests.test_recognition_matching
-- submissions.tests.test_recognition_service
-- submissions.tests.test_student_number_localization
+Runs the **entire test suite** (`python manage.py test`), including the tests that use real OCR. New test modules are picked up automatically; there is no list to keep up to date. (Until 1 October 2026 this job ran four named modules, so 22 of the 29 test modules never ran in CI.)
 
 ## Model / runtime setup
 
