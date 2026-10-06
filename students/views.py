@@ -70,13 +70,10 @@ class StudentListCreateView(generics.ListCreateAPIView):
     search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
-        return (
-            Student.objects.active()
-            .filter(
-                owner=self.request.user,
-            )
-            .order_by("student_number", "id")
-        )
+        queryset = Student.objects.filter(owner=self.request.user)
+        if self.request.query_params.get("include_archived") != "true":
+            queryset = queryset.active()
+        return queryset.order_by("student_number", "id")
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -85,13 +82,16 @@ class StudentListCreateView(generics.ListCreateAPIView):
 class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         from students.lifecycle import archive_student
+        from students.serializers import lifecycle_action
+
+        version, reason = lifecycle_action(self.request.data)
 
         try:
             archive_student(
                 instance.pk,
                 self.request.user,
-                self.request.data.get("version"),
-                self.request.data.get("reason", ""),
+                version,
+                reason,
             )
         except Exception as exc:
             from django.core.exceptions import ValidationError
@@ -242,13 +242,16 @@ class EnrollmentDetailView(generics.GenericAPIView):
         from rest_framework.exceptions import ValidationError as APIValidationError
 
         from students.lifecycle import withdraw_enrollment
+        from students.serializers import lifecycle_action
+
+        version, reason = lifecycle_action(request.data)
 
         try:
             enrollment = withdraw_enrollment(
                 pk,
                 request.user,
-                request.data.get("version"),
-                request.data.get("reason", ""),
+                version,
+                reason,
                 restore=self.restore,
             )
         except ValidationError as exc:
@@ -277,13 +280,16 @@ class StudentRestoreView(generics.GenericAPIView):
         from rest_framework.exceptions import ValidationError as APIValidationError
 
         from students.lifecycle import archive_student
+        from students.serializers import lifecycle_action
+
+        version, reason = lifecycle_action(request.data)
 
         try:
             student = archive_student(
                 pk,
                 request.user,
-                request.data.get("version"),
-                request.data.get("reason", ""),
+                version,
+                reason,
                 restore=True,
             )
         except ValidationError as exc:

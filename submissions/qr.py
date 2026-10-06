@@ -349,6 +349,8 @@ def create_qr_submissions(validated_data, actor):
 
 def review_page(submission_id, page_id, payload, actor):
     """Explicit, audited repair of unreadable labels, duplicate pages or identity conflicts."""
+    from collections.abc import Mapping
+
     from django.shortcuts import get_object_or_404
     from django.utils import timezone
 
@@ -358,6 +360,8 @@ def review_page(submission_id, page_id, payload, actor):
     from submissions.lifecycle import lock_submission_scope
     from submissions.models import RecognitionJob
 
+    if not isinstance(payload, Mapping):
+        raise ValidationError("Page review requires a JSON object.")
     if not isinstance(payload.get("reason"), str) or not payload["reason"].strip():
         raise ValidationError("Page review requires a reason.")
     if type(payload.get("version")) is not int:

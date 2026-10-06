@@ -112,3 +112,5 @@ restore, key reuse, CSV non-restoration, claimed recognition/delivery, late QR
 pages, excluded-page retention, global membership-scope growth and populated
 legacy migration. Production/staging deployment and recovery validation remain
 outside this change, as requested.
+
+A changed student email also invalidates an unsent snapshot at claim/send checks. Explicitly scheduling again creates a new immutable recipient snapshot; the idempotency key includes a SHA-256 digest of the destination (never the plaintext address), so repeat clicks remain idempotent for the current recipient without reviving the old queue. All lifecycle action bodies must be JSON objects with an integer version and a nonempty reason of at most 2000 characters.

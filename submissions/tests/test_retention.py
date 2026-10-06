@@ -339,6 +339,41 @@ class RetentionTests(RetentionFixtures, TemporaryMediaMixin, TestCase):
             self.client.get(f"/api/submissions/{script.pk}/file/").status_code, 404
         )
 
+    def test_contact_email_change_invalidates_old_snapshot_and_new_request_is_idempotent(
+        self,
+    ):
+        script = self.verified()
+        old = schedule_script_email(script)
+        claimed = claim_next_email()
+        self.student.email = "corrected@example.invalid"
+        self.student.save()
+        with patch("distribution.dispatch.EmailMessage.send") as send:
+            deliver_email(claimed, claimed.attempts)
+        send.assert_not_called()
+        old.refresh_from_db()
+        self.assertEqual(old.status, "superseded")
+        replacement = schedule_script_email(script)
+        self.assertNotEqual(replacement.idempotency_key, old.idempotency_key)
+        self.assertEqual(replacement.recipient, "corrected@example.invalid")
+        self.assertEqual(replacement.submission_version, old.submission_version)
+        self.assertEqual(schedule_script_email(script).pk, replacement.pk)
+
+    def test_lifecycle_mutations_reject_non_object_bodies(self):
+        script = self.verified()
+        endpoints = [
+            ("delete", f"/api/submissions/{script.pk}/"),
+            ("delete", f"/api/students/{self.student.pk}/"),
+            ("delete", f"/api/enrollments/{self.enrollment.pk}/"),
+            ("post", f"/api/enrollments/{self.enrollment.pk}/restore/"),
+            ("post", f"/api/students/{self.student.pk}/restore/"),
+        ]
+        for method, url in endpoints:
+            for payload in ([], None, {"version": True, "reason": "Invalid"}):
+                with self.subTest(url=url, payload=payload):
+                    response = getattr(self.client, method)(url, payload, format="json")
+                    self.assertEqual(response.status_code, 400)
+        self.assertIsNone(Student.objects.get(pk=self.student.pk).archived_at)
+
 
 class RetentionConcurrencyTests(
     RetentionFixtures, TemporaryMediaMixin, TransactionTestCase

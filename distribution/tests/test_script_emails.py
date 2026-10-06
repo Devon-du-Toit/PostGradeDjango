@@ -160,8 +160,9 @@ class ScriptEmailTests(ScriptFixture, TestCase):
         failed = self.schedule()
         self.student.email = "restored@example.invalid"
         self.student.save()
-        self.assertEqual(retry_email(failed.pk).status, "awaiting_approval")
-        self.assertEqual(approve_email(failed.pk, self.user).status, "queued")
+        replacement = retry_email(failed.pk)
+        self.assertEqual(replacement.status, "awaiting_approval")
+        self.assertEqual(approve_email(replacement.pk, self.user).status, "queued")
 
     def test_sent_records_cannot_be_retried(self):
         email = self.schedule()
