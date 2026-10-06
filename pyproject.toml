@@ -1,0 +1,9 @@
+# Ruff: linting is enforced in CI; formatting is checked but not enforced yet
+# (see DOCS/CI.md, "lint").
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Pyflakes (unused or duplicate imports, undefined names) and syntax errors.
+select = ["F", "E9"]
