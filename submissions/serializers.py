@@ -1,22 +1,10 @@
-from django.db import transaction
-from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from rest_framework import serializers
 
 from assessments.models import Assessment
 from students.models import Enrollment
-from submissions.jobs import (
-    cancel_active_jobs,
-    enqueue_recognition,
-)
-from submissions.lifecycle import lock_active_assessment, lock_submission_scope
-from submissions.models import (
-    RecognitionAttempt,
-    RecognitionJob,
-    Submission,
-    SubmissionAudit,
-)
-from submissions.signals import delete_file_after_commit
+from submissions.models import RecognitionAttempt, RecognitionJob, Submission
+from submissions.services import create_submission, replace_submission
 from submissions.validation import (
     SubmissionFileValidationError,
     validate_submission_file,
@@ -197,103 +185,12 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return assessment
 
     def create(self, validated_data):
-        validated_data.pop("version", None)
-        validated_data["enrollment"] = None
-        uploaded_file = validated_data["file"]
-        validated_data["original_filename"] = uploaded_file.name
-        validated_data["status"] = Submission.Status.PROCESSING
-
-        with transaction.atomic():
-            # Lock both parents: an archive committed during validation must
-            # reject the upload rather than creating work behind the archive.
-            assessment = lock_active_assessment(validated_data["assessment"].pk)
-            validated_data["assessment"] = assessment
-            submission = super().create(validated_data)
-            SubmissionAudit.objects.create(
-                submission=submission,
-                actor=self.context["request"].user,
-                previous_status=None,
-                new_status=submission.status,
-                reason="Submission uploaded for recognition",
-            )
-            enqueue_recognition(submission)
-
-        return submission
+        return create_submission(validated_data, actor=self.context["request"].user)
 
     def update(self, instance, validated_data):
-        from distribution.services import supersede_submission_emails
-
-        incoming_version = validated_data.get("version")
-        if incoming_version is None:
-            raise serializers.ValidationError(
-                {"version": "This field is required on update."}
-            )
-        with transaction.atomic():
-            lock_submission_scope(instance.pk)
-            # Recognition workers lock their job before updating the submission.
-            # Use that same order before cancellation, avoiding a lock cycle.
-            list(
-                RecognitionJob.objects.filter(
-                    submission=instance,
-                    status__in=RecognitionJob.ACTIVE_STATUSES,
-                )
-                .select_for_update()
-                .values_list("pk", flat=True)
-            )
-            locked = get_object_or_404(
-                Submission.objects.active()
-                .select_related("assessment__course")
-                .select_for_update(of=("self",)),
-                pk=instance.pk,
-            )
-            if incoming_version != locked.version:
-                raise serializers.ValidationError(
-                    {"version": "This submission has changed. Reload and try again."}
-                )
-            if (
-                "assessment" in validated_data
-                and validated_data["assessment"].pk != locked.assessment_id
-            ):
-                raise serializers.ValidationError(
-                    {
-                        "assessment": "A submission cannot be moved to another assessment."
-                    }
-                )
-            if (
-                "enrollment" in validated_data
-                and getattr(validated_data["enrollment"], "pk", None)
-                != locked.enrollment_id
-            ):
-                raise serializers.ValidationError(
-                    {"enrollment": "Use verification to change the student."}
-                )
-            validated_data.pop("version", None)
-            validated_data.pop("assessment", None)
-            validated_data.pop("enrollment", None)
-            if "file" not in validated_data:
-                raise serializers.ValidationError(
-                    "Use verification for student changes or replace the file."
-                )
-            old_storage, old_name = locked.file.storage, locked.file.name
-            validated_data.update(
-                original_filename=validated_data["file"].name,
-            )
-            cancel_active_jobs(locked)
-            supersede_submission_emails(locked)
-            locked.record_status_change(
-                actor=self.context["request"].user,
-                new_status=Submission.Status.PROCESSING,
-                new_enrollment=None,
-                reason="Submission file replaced",
-                expected_version=incoming_version,
-            )
-            locked = super().update(locked, validated_data)
-            enqueue_recognition(locked)
-            if old_name and old_name != locked.file.name:
-                delete_file_after_commit(
-                    old_storage, old_name, f"submission {locked.pk}"
-                )
-        return locked
+        return replace_submission(
+            instance, validated_data, actor=self.context["request"].user
+        )
 
     def validate_enrollment(self, enrollment):
         if enrollment is None:

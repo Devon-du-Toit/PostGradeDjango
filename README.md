@@ -236,3 +236,8 @@ The Vue.js frontend is maintained separately in the [PostGradeVue](https://githu
 A license has not yet been specified.
 
 Bubble recognition and method selection: [guide](DOCS/BUBBLE_RECOGNITION.md). After updating, run migrations before starting web/recognition workers.
+
+
+## Development checks and workflow services
+
+Install the pinned tools with `python -m pip install -r requirements-dev.txt`, then run `python -m ruff check .` and `python -m black --workers 1 --check .`. CI enforces both check-only commands before PostgreSQL tests. See [backend structure](DOCS/BACKEND_STRUCTURE.md) for the upload/replacement services, shared course lock and recognition dependency review. Runtime recognition dependencies and API contracts are preserved; no migration is introduced by this refactor.

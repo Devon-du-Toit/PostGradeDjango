@@ -1,7 +1,7 @@
 from django.db import transaction
-from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
+from courses.lifecycle import lock_active_course
 from courses.models import Course
 
 
@@ -51,9 +51,8 @@ class CourseSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         with transaction.atomic():
-            current = get_object_or_404(
-                Course.objects.active().select_for_update(),
-                pk=instance.pk,
+            current = lock_active_course(
+                instance.pk,
                 owner=self.context["request"].user,
             )
             return super().update(current, validated_data)

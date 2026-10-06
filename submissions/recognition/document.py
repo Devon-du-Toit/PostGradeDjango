@@ -23,12 +23,8 @@ def recognition_image(image_path):
 
     if image_path.suffix.lower() != ".pdf":
         raise ValueError(f"Unsupported submission file type: " f"{image_path.suffix}")
-    # added this
     if image_path.stat().st_size == 0:
         raise ValueError("PDF is empty")
-        # chnaged line 32 to 32-38
-    # document = pymupdf.open(image_path)
-    # changed again 36-41
     try:
         document = pymupdf.open(image_path)
     except pymupdf.FileDataError as error:

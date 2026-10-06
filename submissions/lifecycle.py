@@ -1,7 +1,7 @@
 from django.shortcuts import get_object_or_404
 
 from assessments.models import Assessment
-from courses.models import Course
+from courses.lifecycle import lock_active_course
 from submissions.models import Submission
 
 
@@ -13,9 +13,7 @@ def lock_active_assessment(assessment_id):
     the submission, to avoid cycles with archive and recognition workers.
     """
     assessment = get_object_or_404(Assessment.objects.active(), pk=assessment_id)
-    get_object_or_404(
-        Course.objects.active().select_for_update(), pk=assessment.course_id
-    )
+    lock_active_course(assessment.course_id)
     return get_object_or_404(
         Assessment.objects.active().select_for_update(), pk=assessment_id
     )
