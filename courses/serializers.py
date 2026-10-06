@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
 from courses.models import Course
@@ -46,3 +48,12 @@ class CourseSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+    def update(self, instance, validated_data):
+        with transaction.atomic():
+            current = get_object_or_404(
+                Course.objects.active().select_for_update(),
+                pk=instance.pk,
+                owner=self.context["request"].user,
+            )
+            return super().update(current, validated_data)

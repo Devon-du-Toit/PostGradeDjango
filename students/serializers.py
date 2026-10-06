@@ -1,3 +1,5 @@
+from django.db import IntegrityError, transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from courses.models import Course
 from students.models import Enrollment, Student
@@ -40,6 +42,29 @@ class StudentSerializer(serializers.ModelSerializer):
             )
 
         return student_number
+
+    def create(self, validated_data):
+        try:
+            with transaction.atomic():
+                return super().create(validated_data)
+        except IntegrityError as exc:
+            raise serializers.ValidationError(
+                {"student_number": "Student records changed. Reload and try again."}
+            ) from exc
+
+    def update(self, instance, validated_data):
+        try:
+            with transaction.atomic():
+                current = get_object_or_404(
+                    Student.objects.select_for_update(),
+                    pk=instance.pk,
+                    owner=self.context["request"].user,
+                )
+                return super().update(current, validated_data)
+        except IntegrityError as exc:
+            raise serializers.ValidationError(
+                {"student_number": "Student records changed. Reload and try again."}
+            ) from exc
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
@@ -85,3 +110,26 @@ class EnrollmentSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+    def create(self, validated_data):
+        with transaction.atomic():
+            course = get_object_or_404(
+                Course.objects.active().select_for_update(),
+                pk=validated_data["course"].pk,
+                owner=self.context["request"].user,
+            )
+            student = get_object_or_404(
+                Student.objects.select_for_update(),
+                pk=validated_data["student"].pk,
+                owner=course.owner,
+            )
+            if Enrollment.objects.filter(course=course, student=student).exists():
+                raise serializers.ValidationError("This student is already enrolled.")
+            return super().create(
+                {**validated_data, "course": course, "student": student}
+            )
+
+
+class CSVImportOptionsSerializer(serializers.Serializer):
+    dry_run = serializers.BooleanField(default=False)
+    update_existing = serializers.BooleanField(default=False)
