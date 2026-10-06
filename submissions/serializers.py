@@ -1,6 +1,8 @@
 from django.db import transaction
 from django.urls import reverse
 from rest_framework import serializers
+from assessments.models import Assessment
+from students.models import Enrollment
 
 from submissions.jobs import (
     cancel_active_jobs,
@@ -81,6 +83,13 @@ class RecognitionJobSerializer(serializers.ModelSerializer):
 
 
 class SubmissionSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["assessment"].queryset = Assessment.objects.active()
+        self.fields["enrollment"].queryset = Enrollment.objects.filter(
+            course__archived_at__isnull=True,
+        )
+
     recognition = serializers.SerializerMethodField()
     recognition_job = serializers.SerializerMethodField()
     # "file" is accepted on upload but never rendered back out (see
@@ -197,6 +206,20 @@ class SubmissionSerializer(serializers.ModelSerializer):
         validated_data["status"] = Submission.Status.PROCESSING
 
         with transaction.atomic():
+            # Lock both parents: an archive committed during validation must
+            # reject the upload rather than creating work behind the archive.
+            try:
+                assessment = (
+                    Assessment.objects.active()
+                    .select_related("course")
+                    .select_for_update(of=("self", "course"))
+                    .get(pk=validated_data["assessment"].pk)
+                )
+            except Assessment.DoesNotExist as exc:
+                raise serializers.ValidationError(
+                    {"assessment": "The assessment is archived or unavailable."}
+                ) from exc
+            validated_data["assessment"] = assessment
             submission = super().create(
                 validated_data
             )

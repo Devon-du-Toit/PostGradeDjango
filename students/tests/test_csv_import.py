@@ -216,7 +216,7 @@ class CSVImportTests(APITestCase):
         self.assertEqual(summary["created"], 2)
         self.assertEqual(summary["updated"], 0)
         self.assertEqual(summary["failed"], 0)
-        
+
     def test_whitespace_is_stripped(self):
         r = self.upload(HEADER + "  001 ,  Ann , Lee ,  ann@x.com \n")
         self.assertEqual(r.status_code, 200)

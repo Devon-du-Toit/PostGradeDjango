@@ -8,7 +8,16 @@ from assessments.models import Assessment
 from students.models import Enrollment
 
 
+class SubmissionQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(
+            assessment__archived_at__isnull=True,
+            assessment__course__archived_at__isnull=True,
+        )
+
+
 class Submission(models.Model):
+    objects = SubmissionQuerySet.as_manager()
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         MATCHED = "matched", "Matched"

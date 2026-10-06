@@ -6,4 +6,4 @@ def owned_courses(request):
     # so another lecturer's course ID is rejected like a missing one.
     if request is None:
         return Course.objects.none()
-    return Course.objects.filter(owner=request.user)
+    return Course.objects.active().filter(owner=request.user)

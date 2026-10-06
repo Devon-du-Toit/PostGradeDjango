@@ -26,13 +26,14 @@ class CourseAssessmentListCreateView(generics.ListCreateAPIView):
             Course,
             pk=self.kwargs["course_id"],
             owner=self.request.user,
+            archived_at__isnull=True,
         )
 
     def get_queryset(self):
         course = self.get_course()
-        # undated assessments sort last
         return Assessment.objects.filter(
             course=course,
+            archived_at__isnull=True,
         ).order_by("date", "name", "id")
 
     def perform_create(self, serializer):
@@ -46,7 +47,14 @@ class AssessmentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Assessment.objects.filter(
             course__owner=self.request.user,
+            course__archived_at__isnull=True,
+            archived_at__isnull=True,
         )
+
+    def perform_destroy(self, instance):
+        # Assessments are archived, never hard-deleted, so results,
+        # submissions and audit trails are kept.
+        instance.archive()
 
 
 class AssessmentResultListCreateView(generics.ListCreateAPIView):
@@ -66,6 +74,8 @@ class AssessmentResultListCreateView(generics.ListCreateAPIView):
                 Assessment,
                 pk=self.kwargs["assessment_id"],
                 course__owner=self.request.user,
+                course__archived_at__isnull=True,
+                archived_at__isnull=True,
             )
         return self._assessment
 
@@ -95,9 +105,8 @@ class ResultDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Result.objects.filter(
             assessment__course__owner=self.request.user,
-        ).select_related(
-            "assessment",
-            "enrollment__student",
+            assessment__course__archived_at__isnull=True,
+            assessment__archived_at__isnull=True,
         )
 
     def get_serializer_context(self):
@@ -124,6 +133,7 @@ class CourseGradebookView(APIView):
             Course,
             id=course_id,
             owner=request.user,
+            archived_at__isnull=True,
         )
 
         enrollments = course.enrollments.select_related(
@@ -133,7 +143,9 @@ class CourseGradebookView(APIView):
         students = []
 
         for enrollment in enrollments:
-            assessments = course.assessments.all()
+            assessments = course.assessments.filter(
+                archived_at__isnull=True,
+            )
 
             assessment_data = []
 
@@ -189,6 +201,8 @@ class AssessmentStatisticsView(APIView):
             Assessment,
             pk=pk,
             course__owner=request.user,
+            course__archived_at__isnull=True,
+            archived_at__isnull=True,
         )
 
         statistics = calculate_assessment_statistics(

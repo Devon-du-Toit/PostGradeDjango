@@ -27,6 +27,8 @@ RETRYABLE_STATUSES = [
 
 
 def enqueue_recognition(submission):
+    if not Submission.objects.active().filter(pk=submission.pk).exists():
+        raise ValidationError("Archived submissions cannot be processed.")
     active_job = submission.recognition_jobs.filter(
         status__in=RecognitionJob.ACTIVE_STATUSES,
     ).first()
@@ -66,10 +68,12 @@ def claim_next_job():
     with transaction.atomic():
         job = (
             RecognitionJob.objects
-            .select_for_update(skip_locked=True)
+            .select_for_update(skip_locked=True, of=("self",))
             .filter(
                 status=RecognitionJob.Status.QUEUED,
                 run_after__lte=now,
+                submission__assessment__archived_at__isnull=True,
+                submission__assessment__course__archived_at__isnull=True,
             )
             .order_by("run_after")
             .first()
@@ -97,6 +101,9 @@ def claim_next_job():
 
 
 def run_job(job, claimed_attempt):
+    if not Submission.objects.active().filter(pk=job.submission_id).exists():
+        cancel_active_jobs(job.submission)
+        return
     try:
         result = recognize_submission(
             job.submission,
@@ -157,7 +164,7 @@ def finish_job(job_id, claimed_attempt, enrollment):
             if enrollment is not None
             else Submission.Status.NEEDS_VERIFICATION
         )
-        changed = Submission.objects.filter(
+        changed = Submission.objects.active().filter(
             pk=job.submission_id,
             status=Submission.Status.PROCESSING,
         ).update(
@@ -215,7 +222,7 @@ def retry_or_fail(job, error, delay, now):
         job.status = RecognitionJob.Status.FAILED
         job.finished_at = now
 
-        changed = Submission.objects.filter(
+        changed = Submission.objects.active().filter(
             pk=job.submission_id,
             status=Submission.Status.PROCESSING,
         ).update(
@@ -306,6 +313,8 @@ def retry_recognition(submission_id):
         submission = Submission.objects.select_for_update().get(
             pk=submission_id,
         )
+        if not Submission.objects.active().filter(pk=submission_id).exists():
+            raise ValidationError("Archived submissions cannot be retried.")
 
         # Already queued or running: a repeated retry is a no-op.
         if submission.status == Submission.Status.PROCESSING:

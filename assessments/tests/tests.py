@@ -248,7 +248,7 @@ class AssessmentAPITests(TestCase):
             "Test 1 Revised",
         )
 
-    def test_delete_own_assessment(self):
+    def test_delete_own_assessment_archives_it(self):
         assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
@@ -265,12 +265,17 @@ class AssessmentAPITests(TestCase):
             status.HTTP_204_NO_CONTENT,
         )
 
-        self.assertFalse(
-            Assessment.objects.filter(
-                id=assessment.id
-            ).exists()
-        )
+        assessment.refresh_from_db()
+        self.assertIsNotNone(assessment.archived_at)
 
+        follow_up = self.client.get(
+            f"/api/assessments/{assessment.id}/"
+        )
+        self.assertEqual(
+            follow_up.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        
     def test_user_cannot_access_other_users_assessment(self):
         other_user = get_user_model().objects.create_user(
             email="other@example.com",

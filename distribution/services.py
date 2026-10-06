@@ -5,6 +5,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from distribution.models import ResultEmail
+from assessments.models import Assessment, Result
 from submissions.emailing import build_result_email
 
 
@@ -33,6 +34,8 @@ def idempotency_key(result):
 
 
 def schedule_result_email(result):
+    if not Result.objects.active().filter(pk=result.pk).exists():
+        raise ValidationError("Results in an archived assessment cannot be emailed.")
     # Call inside the transaction that saved the result, so the email
     # record commits (or rolls back) together with the mark.
     key = idempotency_key(result)
@@ -101,6 +104,9 @@ def approve_email(email_id, user):
             .get(pk=email_id)
         )
 
+        if not Result.objects.active().filter(pk=email.result_id).exists():
+            raise ValidationError("Archived result emails cannot be approved.")
+
         if email.status != ResultEmail.Status.AWAITING_APPROVAL:
             raise ValidationError(
                 "Only emails awaiting approval can be approved."
@@ -130,6 +136,8 @@ def approve_email(email_id, user):
 
 
 def approve_assessment_emails(assessment, user):
+    if not Assessment.objects.active().filter(pk=assessment.pk).exists():
+        raise ValidationError("Archived assessment emails cannot be approved.")
     now = timezone.now()
 
     return ResultEmail.objects.filter(
@@ -155,6 +163,9 @@ def retry_email(email_id, confirm_duplicate=False):
             .select_related("result__enrollment__student")
             .get(pk=email_id)
         )
+
+        if not Result.objects.active().filter(pk=email.result_id).exists():
+            raise ValidationError("Archived result emails cannot be retried.")
 
         if email.status != ResultEmail.Status.FAILED:
             raise ValidationError(

@@ -21,14 +21,14 @@ class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        active_courses = Course.objects.filter(
+        active_courses = Course.objects.active().filter(
             owner=request.user,
             year=timezone.localdate().year,
         ).count()
 
         # One GROUP BY query; statuses with no submissions are filled with 0.
         counts = dict(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ).values_list("status").annotate(total=Count("id")).order_by()
         )
@@ -67,7 +67,7 @@ def count_of(queryset, link_field):
 def submission_status_counts(assessments):
     # One GROUP BY query for the whole page: {assessment_id: {status: n}}
     counts = defaultdict(dict)
-    rows = Submission.objects.filter(
+    rows = Submission.objects.active().filter(
         assessment__in=assessments,
     ).values_list("assessment_id", "status").annotate(total=Count("id")).order_by()
     for assessment_id, status, total in rows:
@@ -82,7 +82,7 @@ class DashboardAssessmentListView(generics.ListAPIView):
     search_fields = ["name", "course__code", "course__name"]
 
     def get_queryset(self):
-        return Assessment.objects.filter(
+        return Assessment.objects.active().filter(
             course__owner=self.request.user,
         ).select_related(
             "course",

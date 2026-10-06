@@ -95,6 +95,7 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Enrollment.objects.filter(
             course__owner=self.request.user,
+            course__archived_at__isnull=True,
             student__owner=self.request.user,
         ).order_by("course_id", "student__student_number", "id")
 
@@ -105,10 +106,15 @@ class CourseStudentListView(generics.ListAPIView):
     search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
+        # Archived and other lecturers' courses behave like missing ones.
+        course = get_object_or_404(
+            Course.objects.active(),
+            pk=self.kwargs["course_id"],
+            owner=self.request.user,
+        )
         return Student.objects.filter(
             owner=self.request.user,
-            enrollments__course_id=self.kwargs["course_id"],
-            enrollments__course__owner=self.request.user,
+            enrollments__course=course,
         ).order_by("student_number", "id")
 
 
@@ -121,7 +127,7 @@ class StudentCSVImportView(generics.GenericAPIView):
 
     def post(self, request, course_id):
         course = get_object_or_404(
-            Course,
+            Course.objects.active(),
             id=course_id,
             owner=request.user,
         )
@@ -162,7 +168,12 @@ class StudentCSVImportView(generics.GenericAPIView):
             )
 
         if not dry_run:
-            apply_import_plan(request.user, course, plan)
+            try:
+                apply_import_plan(request.user, course, plan)
+            except CSVFileError as exc:
+                return Response(
+                    {"detail": exc.detail}, status=status.HTTP_404_NOT_FOUND,
+                )
 
         return Response(
             {

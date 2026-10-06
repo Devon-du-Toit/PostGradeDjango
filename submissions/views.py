@@ -31,7 +31,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
     search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
@@ -46,7 +46,7 @@ class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
         ).prefetch_related(
             "recognition_attempts",
@@ -62,7 +62,7 @@ class SubmissionMarkView(generics.GenericAPIView):
         with transaction.atomic():
             # Locked so a repeated request waits, then sees "marked".
             submission = generics.get_object_or_404(
-                Submission.objects.select_for_update().filter(
+                Submission.objects.active().select_for_update(of=("self",)).filter(
                     assessment__course__owner=request.user,
                 ),
                 pk=pk,
@@ -135,7 +135,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
 
     def post(self, request, pk):
         submission = generics.get_object_or_404(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ),
             pk=pk,
@@ -192,7 +192,7 @@ class SubmissionVerificationQueueView(
     search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
             status__in=VERIFICATION_QUEUE_STATUSES,
         ).prefetch_related(
@@ -205,7 +205,7 @@ class SubmissionRecognitionImageView(generics.GenericAPIView):
 
     def get(self, request, pk):
         submission = generics.get_object_or_404(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ),
             pk=pk,
@@ -229,7 +229,7 @@ class SubmissionRetryRecognitionView(generics.GenericAPIView):
 
     def post(self, request, pk):
         submission = generics.get_object_or_404(
-            Submission.objects.filter(
+            Submission.objects.active().filter(
                 assessment__course__owner=request.user,
             ),
             pk=pk,
@@ -274,7 +274,7 @@ class SubmissionFileDownloadView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Submission.objects.filter(
+        return Submission.objects.active().filter(
             assessment__course__owner=self.request.user,
         )
 

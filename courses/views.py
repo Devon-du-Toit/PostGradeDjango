@@ -11,10 +11,11 @@ class CourseListCreateView(generics.ListCreateAPIView):
     filterset_fields = ["year", "semester"]
     search_fields = ["code", "name"]
 
-    # user only gets their own courses, newest term first
+    # user only gets their own courses, and archived ones are hidden
     def get_queryset(self):
         return Course.objects.filter(
             owner=self.request.user,
+            archived_at__isnull=True,
         ).order_by("-year", "-semester", "code", "id")
 
     # course ownership comes from the authenticated user
@@ -27,4 +28,12 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Course.objects.filter(owner=self.request.user)
+        return Course.objects.filter(
+            owner=self.request.user,
+            archived_at__isnull=True,
+        )
+
+    def perform_destroy(self, instance):
+        # Courses are archived, never hard-deleted, so results,
+        # submissions and audit trails are kept.
+        instance.archive()

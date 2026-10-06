@@ -19,6 +19,7 @@ from django.db import transaction
 
 from students.models import Enrollment, Student
 from students.serializers import StudentSerializer
+from courses.models import Course
 
 MAX_FILE_SIZE_BYTES = getattr(
     settings,
@@ -317,6 +318,12 @@ def build_import_plan(
 
 def apply_import_plan(owner, course, plan):
     with transaction.atomic():
+        try:
+            course = Course.objects.active().select_for_update().get(
+                pk=course.pk, owner=owner,
+            )
+        except Course.DoesNotExist as exc:
+            raise CSVFileError("The course is archived or no longer available.") from exc
         students = []
 
         for validated in plan.to_create:

@@ -472,9 +472,8 @@ class StudentAPITests(TestCase):
 
         self.assertEqual(
             response.status_code,
-            status.HTTP_200_OK,
+            status.HTTP_404_NOT_FOUND,
         )
-        self.assertEqual(len(response.data["results"]), 0)
 
     def test_import_students_from_csv(self):
         course = Course.objects.create(
