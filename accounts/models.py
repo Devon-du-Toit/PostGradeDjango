@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -43,6 +44,7 @@ class User(AbstractUser):
     username = None
 
     email = models.EmailField(unique=True)
+    last_password_reset_at = models.DateTimeField(null=True, blank=True)
 
     role = models.CharField(
         max_length=20,
@@ -67,3 +69,10 @@ class AuthThrottleCache(models.Model):
 
     class Meta:
         db_table = "auth_throttle_cache"
+
+
+class PasswordResetRequest(models.Model):
+    email = models.EmailField(max_length=254)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)

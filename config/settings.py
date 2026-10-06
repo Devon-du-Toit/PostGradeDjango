@@ -273,6 +273,17 @@ BUBBLE_AUTO_MATCH_ENABLED = (
 
 # Public signup stays available locally; deployments opt in explicitly.
 ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", DEBUG)
+ALLOW_PASSWORD_RECOVERY = env_bool("ALLOW_PASSWORD_RECOVERY", DEBUG)
+PASSWORD_RESET_FRONTEND_URL = os.getenv(
+    "PASSWORD_RESET_FRONTEND_URL",
+    "http://localhost:5173/reset-password" if DEBUG else "",
+)
+PASSWORD_RESET_TIMEOUT = 3600
+EMAIL_TIMEOUT = 10
+PASSWORD_RESET_THROTTLE_RATE = os.getenv("PASSWORD_RESET_THROTTLE_RATE", "5/hour")
+PASSWORD_RESET_CONFIRM_THROTTLE_RATE = os.getenv(
+    "PASSWORD_RESET_CONFIRM_THROTTLE_RATE", "10/hour"
+)
 CACHES = {
     "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
     "throttle": {

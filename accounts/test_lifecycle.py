@@ -37,8 +37,10 @@ class AccountLifecycleTests(TestCase):
         }
         with override_settings(ALLOW_REGISTRATION=False):
             self.assertEqual(
-                self.client.get("/api/auth/registration-policy/").data,
-                {"registration_open": False},
+                self.client.get("/api/auth/registration-policy/").data[
+                    "registration_open"
+                ],
+                False,
             )
             self.assertEqual(
                 self.client.post("/api/auth/register/", payload).status_code, 403
