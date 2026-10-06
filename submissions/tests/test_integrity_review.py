@@ -142,6 +142,10 @@ class IntegrityReviewTests(TestCase):
 
     def test_read_only_integrity_command_detects_bulk_bypassed_validation(self):
         foreign = Student.objects.create(owner=self.other, student_number="99999999")
+        # An operator can inspect intermediate data in an explicitly deferred
+        # repair transaction; incompatible data still cannot commit.
+        with connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS pg51_enrollment_student_owner DEFERRED")
         Enrollment.objects.bulk_create(
             [Enrollment(course=self.course, student=foreign)]
         )
@@ -153,6 +157,9 @@ class IntegrityReviewTests(TestCase):
             )
         self.assertEqual(json.loads(output.getvalue())["invalid_enrollment_owners"], 1)
         self.assertEqual(Enrollment.objects.count(), before)
+        Enrollment.objects.filter(student=foreign).delete()
+        with connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS pg51_enrollment_student_owner IMMEDIATE")
 
     def test_submission_and_queue_query_counts_do_not_grow_with_page_size(self):
         Submission.objects.bulk_create(
