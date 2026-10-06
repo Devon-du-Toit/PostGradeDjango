@@ -1,12 +1,13 @@
 from django.http import Http404
 from django.test import TestCase
 from rest_framework.test import APIClient
+
 from accounts.models import User
-from courses.models import Course
-from courses.serializers import CourseSerializer
 from assessments.models import Assessment
 from assessments.serializers import AssessmentSerializer
-from students.models import Student, Enrollment
+from courses.models import Course
+from courses.serializers import CourseSerializer
+from students.models import Enrollment, Student
 from students.serializers import EnrollmentSerializer
 
 

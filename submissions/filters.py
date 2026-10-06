@@ -5,7 +5,6 @@ from config.filters import ChoiceInFilter
 from courses.filters import owned_courses
 from submissions.models import Submission
 
-
 # Statuses listed in the verification queue; the dashboard's
 # pending_verifications count uses the same set.
 VERIFICATION_QUEUE_STATUSES = [
@@ -39,7 +38,6 @@ class VerificationQueueFilter(SubmissionFilter):
     # Only the queue's own statuses can be selected.
     status = ChoiceInFilter(
         choices=[
-            (status.value, status.label)
-            for status in VERIFICATION_QUEUE_STATUSES
+            (status.value, status.label) for status in VERIFICATION_QUEUE_STATUSES
         ],
     )

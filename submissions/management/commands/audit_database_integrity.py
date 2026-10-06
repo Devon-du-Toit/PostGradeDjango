@@ -1,9 +1,11 @@
 import json
+
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, F, Q
+
+from distribution.models import ScriptEmail
 from students.models import Enrollment
 from submissions.models import Submission
-from distribution.models import ScriptEmail
 
 
 class Command(BaseCommand):

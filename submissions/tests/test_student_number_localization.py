@@ -11,10 +11,7 @@ from submissions.recognition.localization import (
 class StudentNumberLocalizationTests(SimpleTestCase):
     def setUp(self):
         self.fixture_dir = (
-            Path(__file__).parent
-            / "fixtures"
-            / "student_numbers"
-            / "full"
+            Path(__file__).parent / "fixtures" / "student_numbers" / "full"
         )
 
     def assert_student_number_text(
@@ -22,17 +19,14 @@ class StudentNumberLocalizationTests(SimpleTestCase):
         filename,
         expected_digits,
     ):
-        text = find_student_number_text(
-            self.fixture_dir / filename
-        )
+        text = find_student_number_text(self.fixture_dir / filename)
 
         self.assertIsNotNone(text)
 
         normalized = text.lower()
 
         self.assertTrue(
-            "student number" in normalized
-            or "studentenommer" in normalized
+            "student number" in normalized or "studentenommer" in normalized
         )
 
         digits = re.sub(

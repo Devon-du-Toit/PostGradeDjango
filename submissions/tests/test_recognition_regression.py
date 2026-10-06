@@ -9,7 +9,7 @@ from submissions.recognition.types import (
 
 
 class RecognitionRegressionTests(SimpleTestCase):
-    def test_exact_number_regression_cases(self): #exact number regression
+    def test_exact_number_regression_cases(self):  # exact number regression
         valid_student_numbers = [
             "12345678",
             "23456789",
@@ -39,7 +39,8 @@ class RecognitionRegressionTests(SimpleTestCase):
                 match,
                 expected_number,
             )
-    #synthetic numbers that don't belong to any valid student
+
+    # synthetic numbers that don't belong to any valid student
     # false number regression
     def test_false_match_regression_cases(self):
         valid_student_numbers = [
@@ -74,12 +75,10 @@ class RecognitionRegressionTests(SimpleTestCase):
         self.assertEqual(
             false_matches,
             0,
-            (
-                "Recognition regression: "
-                f"{false_matches} false match(es) detected"
-            ),
+            ("Recognition regression: " f"{false_matches} false match(es) detected"),
         )
-    #metrics test
+
+    # metrics test
     def test_recognition_regression_metrics(self):
         valid_student_numbers = [
             "12345678",
@@ -132,7 +131,6 @@ class RecognitionRegressionTests(SimpleTestCase):
             if match is not None:
                 false_matches += 1
 
-
         self.assertEqual(
             exact_matches,
             len(exact_cases),
@@ -144,6 +142,7 @@ class RecognitionRegressionTests(SimpleTestCase):
             0,
             "False-match recognition regressed",
         )
+
     def test_ambiguous_student_number_returns_no_match(self):
         valid_student_numbers = [
             "12345678",
@@ -160,7 +159,7 @@ class RecognitionRegressionTests(SimpleTestCase):
             valid_student_numbers=valid_student_numbers,
         )
 
-        self.assertIsNone(match) 
+        self.assertIsNone(match)
 
     def test_multiple_possible_candidate_matches_return_no_match(self):
         valid_student_numbers = [
@@ -184,4 +183,4 @@ class RecognitionRegressionTests(SimpleTestCase):
             valid_student_numbers=valid_student_numbers,
         )
 
-        self.assertIsNone(match)   
+        self.assertIsNone(match)

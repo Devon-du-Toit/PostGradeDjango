@@ -31,3 +31,6 @@ Thumbs.db
 media/
 # collectstatic output (built into the container image)
 staticfiles/
+
+# Linter cache
+.ruff_cache/

@@ -3,8 +3,8 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 
 from distribution.services import supersede_submission_emails
-from submissions.models import Submission
 from submissions.lifecycle import lock_submission_scope
+from submissions.models import Submission
 
 
 def verify_submission(
@@ -14,7 +14,7 @@ def verify_submission(
     *,
     expected_version=None,
     correction=False,
-    reason=""
+    reason="",
 ):
     with transaction.atomic():
         lock_submission_scope(submission.pk)

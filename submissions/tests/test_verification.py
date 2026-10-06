@@ -1,5 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.test import TestCase, TransactionTestCase
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from assessments.models import Assessment
@@ -7,9 +9,6 @@ from courses.models import Course
 from students.models import Enrollment, Student
 from submissions.models import Submission
 from submissions.verification import verify_submission
-
-from rest_framework import status
-from rest_framework.test import APIClient
 
 
 class SubmissionVerificationStatusTests(TestCase):
@@ -360,6 +359,7 @@ class ConcurrentSubmissionWorkflowTests(TransactionTestCase):
 
     def test_concurrent_verification_attempts_keep_valid_status(self):
         from concurrent.futures import ThreadPoolExecutor
+
         from django.db import close_old_connections
 
         def verify():

@@ -10,12 +10,10 @@ the (expensive) OCR recognition pipeline ever touches the file.
 import io
 import os
 
+import pymupdf
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-
-import pymupdf
 from PIL import Image
-
 
 ALLOWED_EXTENSIONS = {
     ".pdf": "pdf",
@@ -34,9 +32,7 @@ MAX_FILE_SIZE_BYTES = getattr(
     settings, "MAX_SUBMISSION_FILE_SIZE_BYTES", 15 * 1024 * 1024
 )
 MAX_PDF_PAGES = getattr(settings, "MAX_SUBMISSION_PDF_PAGES", 20)
-MAX_IMAGE_DIMENSION_PX = getattr(
-    settings, "MAX_SUBMISSION_IMAGE_DIMENSION_PX", 6000
-)
+MAX_IMAGE_DIMENSION_PX = getattr(settings, "MAX_SUBMISSION_IMAGE_DIMENSION_PX", 6000)
 
 
 class SubmissionFileValidationError(DjangoValidationError):
@@ -69,8 +65,7 @@ def _validate_size(uploaded_file):
     if uploaded_file.size > MAX_FILE_SIZE_BYTES:
         max_mb = MAX_FILE_SIZE_BYTES / (1024 * 1024)
         raise SubmissionFileValidationError(
-            f"File is too large. Maximum allowed size is "
-            f"{max_mb:.0f} MB."
+            f"File is too large. Maximum allowed size is " f"{max_mb:.0f} MB."
         )
 
 
@@ -136,20 +131,15 @@ def _validate_pdf_content(uploaded_file):
     try:
         document = pymupdf.open(stream=raw_bytes, filetype="pdf")
     except Exception as exc:
-        raise SubmissionFileValidationError(
-            "File content is not a valid PDF."
-        ) from exc
+        raise SubmissionFileValidationError("File content is not a valid PDF.") from exc
 
     try:
         if document.page_count < 1:
-            raise SubmissionFileValidationError(
-                "PDF has no pages."
-            )
+            raise SubmissionFileValidationError("PDF has no pages.")
 
         if document.page_count > MAX_PDF_PAGES:
             raise SubmissionFileValidationError(
-                "PDF has too many pages. Maximum allowed is "
-                f"{MAX_PDF_PAGES}."
+                "PDF has too many pages. Maximum allowed is " f"{MAX_PDF_PAGES}."
             )
 
         page = document[0]

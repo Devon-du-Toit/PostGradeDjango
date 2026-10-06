@@ -17,8 +17,8 @@ from students.models import Enrollment, Student
 from submissions import jobs
 from submissions.models import RecognitionJob, Submission
 from submissions.recognition.types import RecognitionResult
-from submissions.verification import verify_submission
 from submissions.tests.helpers import make_pdf
+from submissions.verification import verify_submission
 
 RECOGNIZE = "submissions.jobs.recognize_submission"
 
@@ -304,9 +304,12 @@ class WorkerFailureTests(RecognitionJobTestMixin, TestCase):
 
         # TestCase runs inside a transaction; the worker's connection
         # cleanup would close the test's own connection.
-        with patch(RECOGNIZE, return_value=matched_result(self.enrollment)), patch(
-            "submissions.management.commands.run_recognition_worker"
-            ".close_old_connections"
+        with (
+            patch(RECOGNIZE, return_value=matched_result(self.enrollment)),
+            patch(
+                "submissions.management.commands.run_recognition_worker"
+                ".close_old_connections"
+            ),
         ):
             call_command(
                 "run_recognition_worker",

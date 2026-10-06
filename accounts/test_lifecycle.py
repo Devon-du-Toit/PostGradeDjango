@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
 from django.db import close_old_connections

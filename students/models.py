@@ -1,6 +1,6 @@
 from django.conf import settings
-from django.db import models, transaction
 from django.core.exceptions import ValidationError
+from django.db import models, transaction
 
 
 class Student(models.Model):

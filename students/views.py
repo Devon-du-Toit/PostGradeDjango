@@ -13,9 +13,9 @@ from students.csv_import import (
 from students.filters import EnrollmentFilter, StudentFilter
 from students.models import Enrollment, Student
 from students.serializers import (
+    CSVImportOptionsSerializer,
     EnrollmentSerializer,
     StudentSerializer,
-    CSVImportOptionsSerializer,
 )
 from submissions.emailing import send_student_email
 

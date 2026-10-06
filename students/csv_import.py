@@ -18,9 +18,9 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 
+from courses.models import Course
 from students.models import Enrollment, Student
 from students.serializers import StudentSerializer
-from courses.models import Course
 
 MAX_FILE_SIZE_BYTES = getattr(
     settings,

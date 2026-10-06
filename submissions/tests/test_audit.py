@@ -1,9 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor
-from threading import Event
 from unittest.mock import patch
 
-from django.db import close_old_connections, connection, transaction
-from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
+from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import User

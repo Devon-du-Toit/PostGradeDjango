@@ -1,4 +1,5 @@
 from django.urls import path
+
 from assessments.views import AssessmentDetailView, CourseAssessmentListCreateView
 
 urlpatterns = [

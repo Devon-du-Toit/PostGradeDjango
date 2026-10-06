@@ -2,14 +2,14 @@ from django.urls import path
 
 from submissions.views import (
     RecognitionMethodsView,
-    SubmissionDetailView,
     SubmissionCorrectionView,
+    SubmissionDetailView,
     SubmissionFileDownloadView,
     SubmissionListCreateView,
     SubmissionRecognitionImageView,
     SubmissionRetryRecognitionView,
-    SubmissionVerifyView,
     SubmissionVerificationQueueView,
+    SubmissionVerifyView,
 )
 
 urlpatterns = [

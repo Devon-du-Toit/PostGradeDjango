@@ -1,15 +1,13 @@
-import io
-
 from django.contrib.auth import get_user_model
-from django.test import TestCase
-from django.db import IntegrityError
-from students.models import Student
-from courses.models import Course
-from students.models import Enrollment
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.core.files.uploadedfile import SimpleUploadedFile
+
+from courses.models import Course
+from students.models import Enrollment, Student
 
 
 class StudentModelTests(TestCase):
@@ -167,9 +165,7 @@ class StudentAPITests(TestCase):
             status.HTTP_201_CREATED,
         )
 
-        student = Student.objects.get(
-            student_number="12345678"
-        )
+        student = Student.objects.get(student_number="12345678")
 
         self.assertEqual(student.owner, self.user)
 
@@ -228,9 +224,7 @@ class StudentAPITests(TestCase):
             email="john.doe@example.com",
         )
 
-        response = self.client.get(
-            f"/api/students/{student.id}/"
-        )
+        response = self.client.get(f"/api/students/{student.id}/")
 
         self.assertEqual(
             response.status_code,
@@ -418,9 +412,7 @@ class StudentAPITests(TestCase):
             student=student_2,
         )
 
-        response = self.client.get(
-            f"/api/courses/{course.id}/students/"
-        )
+        response = self.client.get(f"/api/courses/{course.id}/students/")
 
         self.assertEqual(
             response.status_code,
@@ -430,8 +422,7 @@ class StudentAPITests(TestCase):
         self.assertEqual(len(response.data["results"]), 2)
 
         student_numbers = {
-            student["student_number"]
-            for student in response.data["results"]
+            student["student_number"] for student in response.data["results"]
         }
 
         self.assertEqual(
@@ -466,9 +457,7 @@ class StudentAPITests(TestCase):
             student=student,
         )
 
-        response = self.client.get(
-            f"/api/courses/{course.id}/students/"
-        )
+        response = self.client.get(f"/api/courses/{course.id}/students/")
 
         self.assertEqual(
             response.status_code,
@@ -547,10 +536,7 @@ class StudentAPITests(TestCase):
             semester=1,
         )
 
-        csv_content = (
-            "student_number,name\n"
-            "12345678,Jane Smith\n"
-        )
+        csv_content = "student_number,name\n" "12345678,Jane Smith\n"
 
         csv_file = SimpleUploadedFile(
             "students.csv",

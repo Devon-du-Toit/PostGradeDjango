@@ -1,7 +1,7 @@
-import pymupdf
 from io import BytesIO
 from pathlib import Path
 
+import pymupdf
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -37,8 +37,6 @@ class RecognitionIntegrationTests(TemporaryMediaMixin, TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Class Test 1",
-
-
         )
 
         self.student = Student.objects.create(

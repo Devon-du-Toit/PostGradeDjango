@@ -1,7 +1,5 @@
 def levenshtein_distance(value_a, value_b):
-    previous_row = list(
-        range(len(value_b) + 1)
-    )
+    previous_row = list(range(len(value_b) + 1))
 
     for i, char_a in enumerate(
         value_a,
@@ -15,10 +13,7 @@ def levenshtein_distance(value_a, value_b):
         ):
             insertion = current_row[j - 1] + 1
             deletion = previous_row[j] + 1
-            substitution = (
-                previous_row[j - 1]
-                + (char_a != char_b)
-            )
+            substitution = previous_row[j - 1] + (char_a != char_b)
 
             current_row.append(
                 min(
@@ -66,10 +61,7 @@ def find_best_student_number_match(
     if not possible_matches:
         return None
 
-    best_distance = min(
-        match[1]
-        for match in possible_matches
-    )
+    best_distance = min(match[1] for match in possible_matches)
 
     closest_numbers = {
         student_number

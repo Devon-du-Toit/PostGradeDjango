@@ -1,9 +1,10 @@
 from django.contrib.auth import get_user_model
-from django.test import TestCase
 from django.db import IntegrityError
-from courses.models import Course
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
+
+from courses.models import Course
 
 
 class CourseModelTests(TestCase):
@@ -165,9 +166,7 @@ class CourseAPITests(TestCase):
             semester=1,
         )
 
-        response = self.client.get(
-            f"/api/courses/{other_course.id}/"
-        )
+        response = self.client.get(f"/api/courses/{other_course.id}/")
 
         self.assertEqual(
             response.status_code,
@@ -203,9 +202,7 @@ class CourseAPITests(TestCase):
             semester=1,
         )
 
-        response = self.client.delete(
-            f"/api/courses/{course.id}/"
-        )
+        response = self.client.delete(f"/api/courses/{course.id}/")
 
         self.assertEqual(
             response.status_code,
@@ -215,9 +212,7 @@ class CourseAPITests(TestCase):
         course.refresh_from_db()
         self.assertIsNotNone(course.archived_at)
 
-        follow_up = self.client.get(
-            f"/api/courses/{course.id}/"
-        )
+        follow_up = self.client.get(f"/api/courses/{course.id}/")
         self.assertEqual(
             follow_up.status_code,
             status.HTTP_404_NOT_FOUND,

@@ -2,10 +2,9 @@ import shutil
 import tempfile
 from io import BytesIO
 
-from django.test import override_settings
 import pymupdf
+from django.test import override_settings
 from PIL import Image
-
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 

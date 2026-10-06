@@ -1,23 +1,22 @@
 from django.db import transaction
-from django.urls import reverse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from rest_framework import serializers
+
 from assessments.models import Assessment
 from students.models import Enrollment
-
 from submissions.jobs import (
     cancel_active_jobs,
     enqueue_recognition,
 )
+from submissions.lifecycle import lock_active_assessment, lock_submission_scope
 from submissions.models import (
     RecognitionAttempt,
     RecognitionJob,
     Submission,
     SubmissionAudit,
 )
-
 from submissions.signals import delete_file_after_commit
-from submissions.lifecycle import lock_active_assessment, lock_submission_scope
 from submissions.validation import (
     SubmissionFileValidationError,
     validate_submission_file,

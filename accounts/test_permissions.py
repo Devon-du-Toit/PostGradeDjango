@@ -1,12 +1,14 @@
 from unittest.mock import patch
+
 from django.test import TestCase
 from rest_framework.test import APIClient
+
 from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
 from distribution.models import ScriptEmail
-from students.models import Student, Enrollment
-from submissions.models import Submission, RecognitionJob, SubmissionAudit
+from students.models import Enrollment, Student
+from submissions.models import RecognitionJob, Submission, SubmissionAudit
 
 
 class EndpointPermissionMatrixTests(TestCase):
@@ -147,9 +149,10 @@ class EndpointPermissionMatrixTests(TestCase):
         self.assert_unchanged()
 
     def test_every_role_including_staff_admin_is_owner_scoped(self):
-        with patch("students.views.send_student_email") as send, patch(
-            "submissions.views.FileResponse"
-        ) as files:
+        with (
+            patch("students.views.send_student_email") as send,
+            patch("submissions.views.FileResponse") as files,
+        ):
             for role in User.Role.values:
                 self.other.role = role
                 self.other.is_staff = role == User.Role.ADMIN

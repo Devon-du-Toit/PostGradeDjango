@@ -6,23 +6,23 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0007_alter_recognitionattempt_outcome'),
+        ("submissions", "0007_alter_recognitionattempt_outcome"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='recognitionattempt',
-            name='error_message',
+            model_name="recognitionattempt",
+            name="error_message",
             field=models.TextField(blank=True),
         ),
         migrations.AddField(
-            model_name='recognitionattempt',
-            name='error_type',
+            model_name="recognitionattempt",
+            name="error_type",
             field=models.CharField(blank=True, max_length=100),
         ),
         migrations.AddField(
-            model_name='recognitionattempt',
-            name='raw_candidates',
+            model_name="recognitionattempt",
+            name="raw_candidates",
             field=models.JSONField(blank=True, default=list),
         ),
     ]

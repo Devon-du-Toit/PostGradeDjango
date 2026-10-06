@@ -6,13 +6,21 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0001_initial'),
+        ("submissions", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='submission',
-            name='status',
-            field=models.CharField(choices=[('uploaded', 'Uploaded'), ('matched', 'Matched'), ('marked', 'Marked')], default='uploaded', max_length=20),
+            model_name="submission",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("uploaded", "Uploaded"),
+                    ("matched", "Matched"),
+                    ("marked", "Marked"),
+                ],
+                default="uploaded",
+                max_length=20,
+            ),
         ),
     ]

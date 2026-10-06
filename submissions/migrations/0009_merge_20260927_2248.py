@@ -6,9 +6,8 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0005_alter_submission_status_recognitionjob'),
-        ('submissions', '0008_recognitionattempt_error_and_candidates'),
+        ("submissions", "0005_alter_submission_status_recognitionjob"),
+        ("submissions", "0008_recognitionattempt_error_and_candidates"),
     ]
 
-    operations = [
-    ]
+    operations = []

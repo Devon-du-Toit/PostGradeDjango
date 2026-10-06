@@ -1,9 +1,9 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
-from courses.models import Course
 
 from assessments.models import Assessment
+from courses.models import Course
 
 
 class AssessmentSerializer(serializers.ModelSerializer):

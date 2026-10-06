@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('assessments', '0002_alter_assessment_max_mark_result'),
+        ("assessments", "0002_alter_assessment_max_mark_result"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='result',
-            name='version',
+            model_name="result",
+            name="version",
             field=models.PositiveIntegerField(default=1, editable=False),
         ),
     ]

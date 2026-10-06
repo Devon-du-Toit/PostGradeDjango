@@ -3,8 +3,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from django.core.files.base import ContentFile
 from django.conf import settings
+from django.core.files.base import ContentFile
+
 from submissions.models import RecognitionAttempt
 from submissions.recognition.document import (
     crop_image,
@@ -34,6 +35,7 @@ REASON_AREA_NOT_FOUND = "Student number area could not be identified"
 REASON_NOT_MATCHED = "Student number could not be matched"
 
 logger = logging.getLogger(__name__)
+
 
 @contextmanager
 def _local_file_path(field_file):
@@ -94,6 +96,7 @@ def recognize_submission(submission):
 
     return result
 
+
 def save_region_image(attempt, image_path, box):
     try:
         attempt.region_image.save(
@@ -108,6 +111,7 @@ def save_region_image(attempt, image_path, box):
             exc_info=True,
         )
 
+
 def run_recognition(submission, attempt):
     if submission.recognition_method == "bubble":
         return run_bubble_recognition(submission, attempt)
@@ -118,9 +122,7 @@ def run_recognition(submission, attempt):
     ):
 
         # Check image quality before trying OCR.
-        quality_result = assess_image_quality(
-            image_path
-        )
+        quality_result = assess_image_quality(image_path)
 
         if not quality_result.usable:
             attempt.outcome = RecognitionAttempt.Outcome.IMAGE_UNUSABLE
@@ -157,9 +159,7 @@ def run_recognition(submission, attempt):
         "image_height": region.image_height,
     }
 
-    candidates = extract_student_number_candidate(
-        region.text
-    )
+    candidates = extract_student_number_candidate(region.text)
 
     if not candidates:
         attempt.outcome = RecognitionAttempt.Outcome.NO_CANDIDATE
@@ -177,15 +177,10 @@ def run_recognition(submission, attempt):
         for candidate in candidates
     ]
 
-    enrollments = (
-        submission.assessment.course
-        .enrollments
-        .select_related("student")
-    )
+    enrollments = submission.assessment.course.enrollments.select_related("student")
 
     enrollment_by_number = {
-        enrollment.student.student_number: enrollment
-        for enrollment in enrollments
+        enrollment.student.student_number: enrollment for enrollment in enrollments
     }
 
     matched_number = find_best_student_number_match(
@@ -217,8 +212,10 @@ def run_bubble_recognition(submission, attempt):
     # text localization or fuzzy number matching.
     from submissions.recognition.bubbles import read_bubbles
 
-    with (_local_file_path(submission.file) as local_path,
-          recognition_image(local_path) as image_path):
+    with (
+        _local_file_path(submission.file) as local_path,
+        recognition_image(local_path) as image_path,
+    ):
         reading = read_bubbles(image_path)
     if reading.region is None:
         attempt.outcome = RecognitionAttempt.Outcome.REGION_NOT_FOUND
@@ -232,16 +229,24 @@ def run_bubble_recognition(submission, attempt):
     attempt.confidence = reading.confidence
     attempt.confidence_type = RecognitionAttempt.ConfidenceType.BUBBLE_MARGIN
     attempt.region_image.save(
-        f"submission_{submission.pk}_bubble.png", ContentFile(reading.image), save=False,
+        f"submission_{submission.pk}_bubble.png",
+        ContentFile(reading.image),
+        save=False,
     )
     if reading.ambiguity:
         attempt.outcome = RecognitionAttempt.Outcome.NO_CANDIDATE
         return RecognitionResult(enrollment=None, reason=reading.reason)
-    attempt.raw_candidates = [{"value": reading.candidate, "confidence": reading.confidence}]
+    attempt.raw_candidates = [
+        {"value": reading.candidate, "confidence": reading.confidence}
+    ]
     # Exact equality only; no OCR, nearest-number lookup or fuzzy matching.
-    enrollment = submission.assessment.course.enrollments.select_related("student").filter(
-        student__student_number=reading.candidate,
-    ).first()
+    enrollment = (
+        submission.assessment.course.enrollments.select_related("student")
+        .filter(
+            student__student_number=reading.candidate,
+        )
+        .first()
+    )
     if enrollment is None or not getattr(settings, "BUBBLE_AUTO_MATCH_ENABLED", True):
         attempt.outcome = RecognitionAttempt.Outcome.NO_MATCH
         return RecognitionResult(enrollment=None, reason=REASON_NOT_MATCHED)

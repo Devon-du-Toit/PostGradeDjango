@@ -63,9 +63,7 @@ class CSVImportTests(APITestCase):
         real_validator = StudentSerializer.validate_student_number
 
         def validate_student_number(serializer, value):
-            calls.append(
-                (serializer.context["request"].user.pk, serializer.instance)
-            )
+            calls.append((serializer.context["request"].user.pk, serializer.instance))
             return real_validator(serializer, value)
 
         with patch.object(
@@ -140,14 +138,10 @@ class CSVImportTests(APITestCase):
     # ---- criterion 1: parsing ----
 
     def test_valid_import_creates_students_and_enrollments(self):
-        r = self.upload(
-            HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n"
-        )
+        r = self.upload(HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Student.objects.filter(owner=self.user).count(), 2)
-        self.assertEqual(
-            Enrollment.objects.filter(course=self.course).count(), 2
-        )
+        self.assertEqual(Enrollment.objects.filter(course=self.course).count(), 2)
 
     def test_utf8_bom_is_handled(self):
         data = b"\xef\xbb\xbf" + (HEADER + "001,Ann,Lee,ann@x.com\n").encode()
@@ -166,8 +160,7 @@ class CSVImportTests(APITestCase):
 
     def test_blank_rows_are_skipped(self):
         r = self.upload(
-            HEADER
-            + "001,Ann,Lee,ann@x.com\n,,,\n\n002,Bob,Ray,bob@x.com\n"
+            HEADER + "001,Ann,Lee,ann@x.com\n,,,\n\n002,Bob,Ray,bob@x.com\n"
         )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Student.objects.count(), 2)
@@ -183,33 +176,23 @@ class CSVImportTests(APITestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_all_errors_are_reported_not_just_the_first(self):
-        r = self.upload(
-            HEADER + ",Ann,Lee,ann@x.com\n002,,Ray,bob@x.com\n"
-        )
+        r = self.upload(HEADER + ",Ann,Lee,ann@x.com\n002,,Ray,bob@x.com\n")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(len(r.data["errors"]), 2)
 
     def test_error_response_matches_vue_import_screen(self):
-        r = self.upload(
-            HEADER + ",Ann,Lee,ann@x.com\n002,,Ray,bob@x.com\n"
-        )
+        r = self.upload(HEADER + ",Ann,Lee,ann@x.com\n002,,Ray,bob@x.com\n")
         self.assertEqual(r.status_code, 400)
         first, second = r.data["errors"]
         self.assertEqual(first["student_number"], "")
-        self.assertEqual(
-            first["message"], "student_number: This field is required."
-        )
+        self.assertEqual(first["message"], "student_number: This field is required.")
         self.assertEqual(second["student_number"], "002")
-        self.assertEqual(
-            second["message"], "first_name: This field is required."
-        )
+        self.assertEqual(second["message"], "first_name: This field is required.")
         self.assertEqual(r.data["summary"]["total"], 2)
         self.assertEqual(r.data["summary"]["failed"], 2)
 
     def test_success_summary_has_total_and_failed(self):
-        r = self.upload(
-            HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n"
-        )
+        r = self.upload(HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n")
         self.assertEqual(r.status_code, 200)
         summary = r.data["summary"]
         self.assertEqual(summary["total"], 2)
@@ -225,9 +208,7 @@ class CSVImportTests(APITestCase):
         self.assertEqual(s.first_name, "Ann")
 
     def test_duplicate_numbers_in_file_are_errors(self):
-        r = self.upload(
-            HEADER + "001,Ann,Lee,ann@x.com\n001,Bob,Ray,bob@x.com\n"
-        )
+        r = self.upload(HEADER + "001,Ann,Lee,ann@x.com\n001,Bob,Ray,bob@x.com\n")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["errors"][0]["row"], 3)
         self.assertEqual(Student.objects.count(), 0)
@@ -240,8 +221,7 @@ class CSVImportTests(APITestCase):
     def test_row_cap_rejected(self):
         with patch("students.csv_import.MAX_ROWS", 2):
             r = self.upload(
-                HEADER
-                + "001,A,A,a@x.com\n002,B,B,b@x.com\n003,C,C,c@x.com\n"
+                HEADER + "001,A,A,a@x.com\n002,B,B,b@x.com\n003,C,C,c@x.com\n"
             )
         self.assertEqual(r.status_code, 400)
         self.assertEqual(Student.objects.count(), 0)
@@ -279,9 +259,7 @@ class CSVImportTests(APITestCase):
             last_name="Lee",
             email="ann@x.com",
         )
-        r = self.upload(
-            HEADER + "001,Anna,Lee,ann@x.com\n", update_existing="true"
-        )
+        r = self.upload(HEADER + "001,Anna,Lee,ann@x.com\n", update_existing="true")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Student.objects.get().first_name, "Anna")
         self.assertEqual(r.data["summary"]["updated"], 1)
@@ -299,9 +277,7 @@ class CSVImportTests(APITestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Student.objects.count(), 2)
         self.assertEqual(Enrollment.objects.count(), 2)
-        self.assertEqual(
-            Student.objects.get(student_number="00123").first_name, "Ann"
-        )
+        self.assertEqual(Student.objects.get(student_number="00123").first_name, "Ann")
 
     def test_cross_owner_isolation(self):
         theirs = Student.objects.create(
@@ -311,9 +287,7 @@ class CSVImportTests(APITestCase):
             last_name="Zee",
             email="zed@x.com",
         )
-        r = self.upload(
-            HEADER + "001,Ann,Lee,ann@x.com\n", update_existing="true"
-        )
+        r = self.upload(HEADER + "001,Ann,Lee,ann@x.com\n", update_existing="true")
         self.assertEqual(r.status_code, 200)
         theirs.refresh_from_db()
         self.assertEqual(theirs.first_name, "Zed")
@@ -336,12 +310,8 @@ class CSVImportTests(APITestCase):
                 raise RuntimeError("boom")
             return real(*args, **kwargs)
 
-        with patch.object(
-            Enrollment.objects, "get_or_create", side_effect=flaky
-        ):
+        with patch.object(Enrollment.objects, "get_or_create", side_effect=flaky):
             with self.assertRaises(RuntimeError):
-                self.upload(
-                    HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n"
-                )
+                self.upload(HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n")
         self.assertEqual(Student.objects.count(), 0)
         self.assertEqual(Enrollment.objects.count(), 0)

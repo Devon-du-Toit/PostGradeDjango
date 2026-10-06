@@ -2,8 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from submissions.models import Submission
 from students.models import Enrollment
+from submissions.models import Submission
 
 
 class ScriptEmail(models.Model):

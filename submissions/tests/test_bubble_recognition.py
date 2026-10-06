@@ -34,8 +34,15 @@ class BubbleRecognitionTests(SimpleTestCase):
         self.assertEqual(reading.template, "nwu-eight-compact-1")
 
     def test_rotation_scale_skew_perspective_and_shadows(self):
-        for options in ({"angle": 90}, {"angle": 180}, {"angle": 270}, {"angle": 7},
-                        {"perspective": True}, {"shadow": True}, {"scale": .75}):
+        for options in (
+            {"angle": 90},
+            {"angle": 180},
+            {"angle": 270},
+            {"angle": 7},
+            {"perspective": True},
+            {"shadow": True},
+            {"scale": 0.75},
+        ):
             with self.subTest(options=options):
                 reading = self.read(distorted_image(bubble_image(), **options))
                 self.assertEqual(reading.candidate, "01234567")

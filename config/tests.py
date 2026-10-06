@@ -1,8 +1,6 @@
 """List API behaviour shared by every list endpoint (#11): pagination,
 stable ordering, filters/search outside submissions, and query counts."""
 
-from decimal import Decimal
-
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
