@@ -10,14 +10,13 @@ from distribution.dispatch import (
     recover_expired_sends,
 )
 
-
 logger = logging.getLogger(__name__)
 
 RECOVERY_INTERVAL = 60
 
 
 class Command(BaseCommand):
-    help = "Send queued result emails."
+    help = "Send queued script emails."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -74,7 +73,7 @@ class Command(BaseCommand):
         try:
             recovered = recover_expired_sends()
         except Exception:
-            logger.exception("Result email recovery failed")
+            logger.exception("Script email recovery failed")
             return
 
         if recovered:

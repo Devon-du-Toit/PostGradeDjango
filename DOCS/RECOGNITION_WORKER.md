@@ -81,7 +81,7 @@ A submission's `status` reflects its place in the review workflow; a job's `stat
 
 ```
 Submission:  processing ──▶ matched ─────────────┐
-                 │     ──▶ needs_verification ───┼──▶ verified ──▶ marked
+                 │     ──▶ needs_verification ───┼──▶ verified
                  │                               │
                  └────▶ recognition_failed ──(lecturer retry)──▶ processing
 

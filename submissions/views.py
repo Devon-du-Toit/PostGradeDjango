@@ -3,21 +3,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from assessments.models import Result
-from assessments.serializers import ResultSerializer
-from distribution.serializers import ResultEmailSerializer
-from distribution.services import schedule_result_email
 from submissions.filters import (
     SUBMISSION_SEARCH_FIELDS,
     VERIFICATION_QUEUE_STATUSES,
     SubmissionFilter,
     VerificationQueueFilter,
 )
-from submissions.models import Submission, SubmissionAudit
+from submissions.models import Submission
 from submissions.serializers import SubmissionSerializer
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
 from django.http import FileResponse, Http404
 
 from students.models import Enrollment
@@ -29,11 +24,15 @@ class RecognitionMethodsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response({
-            "methods": [{"value": value, "label": label}
-                        for value, label in Submission.RecognitionMethod.choices],
-            "bubble_templates": ["nwu-eight-standard-1", "nwu-eight-compact-1"],
-        })
+        return Response(
+            {
+                "methods": [
+                    {"value": value, "label": label}
+                    for value, label in Submission.RecognitionMethod.choices
+                ],
+                "bubble_templates": ["nwu-eight-standard-1", "nwu-eight-compact-1"],
+            }
+        )
 
 
 class SubmissionListCreateView(generics.ListCreateAPIView):
@@ -43,102 +42,36 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
     search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
-        return Submission.objects.active().filter(
-            assessment__course__owner=self.request.user,
-        ).prefetch_related(
-            "recognition_attempts",
-            "recognition_jobs",
-        ).order_by("-created_at", "-id")
+        return (
+            Submission.objects.active()
+            .filter(
+                assessment__course__owner=self.request.user,
+            )
+            .prefetch_related(
+                "recognition_attempts",
+                "recognition_jobs",
+            )
+            .order_by("-created_at", "-id")
+        )
 
     def perform_create(self, serializer):
         serializer.save()
+
 
 class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Submission.objects.active().filter(
-            assessment__course__owner=self.request.user,
-        ).prefetch_related(
-            "recognition_attempts",
-            "recognition_jobs",
-        )
-
-class SubmissionMarkView(generics.GenericAPIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, pk):
-        # Mark, status and email record commit together: a mail problem
-        # can never undo or lose a saved mark.
-        with transaction.atomic():
-            # Locked so a repeated request waits, then sees "marked".
-            submission = generics.get_object_or_404(
-                Submission.objects.active().select_for_update(of=("self",)).filter(
-                    assessment__course__owner=request.user,
-                ),
-                pk=pk,
+        return (
+            Submission.objects.active()
+            .filter(
+                assessment__course__owner=self.request.user,
             )
-
-            if submission.status != Submission.Status.VERIFIED:
-                return Response(
-                    {
-                        "detail": (
-                            "Submission must be verified "
-                            "before entering a mark."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            existing_result = Result.objects.select_for_update().filter(
-                assessment=submission.assessment,
-                enrollment=submission.enrollment,
-            ).first()
-
-            serializer = ResultSerializer(
-                existing_result,
-                data={
-                    "enrollment": submission.enrollment_id,
-                    "mark": request.data.get("mark"),
-                },
-                context={
-                    "request": request,
-                    "assessment": submission.assessment,
-                },
+            .prefetch_related(
+                "recognition_attempts",
+                "recognition_jobs",
             )
-
-            serializer.is_valid(raise_exception=True)
-            result = serializer.save(
-                assessment=submission.assessment,
-            )
-
-            previous_status = submission.status
-            submission.status = Submission.Status.MARKED
-            submission.save(update_fields=["status"])
-
-            SubmissionAudit.objects.create(
-                submission=submission,
-                actor=request.user,
-                previous_status=previous_status,
-                new_status=Submission.Status.MARKED,
-                previous_enrollment=submission.enrollment,
-                new_enrollment=submission.enrollment,
-                reason="Result created",
-            )
-
-            email = schedule_result_email(result)
-
-        return Response(
-            {
-                **ResultSerializer(result).data,
-                "email_delivery": ResultEmailSerializer(email).data,
-            },
-            status=(
-                status.HTTP_200_OK
-                if existing_result
-                else status.HTTP_201_CREATED
-            ),
         )
 
 
@@ -157,9 +90,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
 
         if enrollment_id is None:
             return Response(
-                {
-                    "detail": "Enrollment is required."
-                },
+                {"detail": "Enrollment is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -195,22 +126,26 @@ class SubmissionVerifyView(generics.GenericAPIView):
         )
 
 
-class SubmissionVerificationQueueView(
-    generics.ListAPIView
-):
+class SubmissionVerificationQueueView(generics.ListAPIView):
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
     filterset_class = VerificationQueueFilter
     search_fields = SUBMISSION_SEARCH_FIELDS
 
     def get_queryset(self):
-        return Submission.objects.active().filter(
-            assessment__course__owner=self.request.user,
-            status__in=VERIFICATION_QUEUE_STATUSES,
-        ).prefetch_related(
-            "recognition_attempts",
-            "recognition_jobs",
-        ).order_by("created_at", "id")
+        return (
+            Submission.objects.active()
+            .filter(
+                assessment__course__owner=self.request.user,
+                status__in=VERIFICATION_QUEUE_STATUSES,
+            )
+            .prefetch_related(
+                "recognition_attempts",
+                "recognition_jobs",
+            )
+            .order_by("created_at", "id")
+        )
+
 
 class SubmissionRecognitionImageView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
@@ -226,9 +161,7 @@ class SubmissionRecognitionImageView(generics.GenericAPIView):
         attempt = submission.recognition_attempts.first()
 
         if attempt is None or not attempt.region_image:
-            raise Http404(
-                "No recognition image for this submission."
-            )
+            raise Http404("No recognition image for this submission.")
 
         return FileResponse(
             attempt.region_image.open("rb"),
@@ -279,7 +212,7 @@ class SubmissionFileDownloadView(generics.GenericAPIView):
     this endpoint, which enforces the same course-owner check used
     everywhere else in this app. Requesting another lecturer's
     submission id here returns 404, matching the existing pattern
-    (e.g. SubmissionMarkView) of not confirming another user's
+    (e.g. SubmissionVerifyView) of not confirming another user's
     object exists at all.
     """
 
@@ -307,8 +240,5 @@ class SubmissionFileDownloadView(generics.GenericAPIView):
         return FileResponse(
             file_handle,
             as_attachment=True,
-            filename=(
-                submission.original_filename
-                or submission.file.name
-            ),
+            filename=(submission.original_filename or submission.file.name),
         )

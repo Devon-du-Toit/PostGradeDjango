@@ -1,10 +1,10 @@
 from django.contrib import admin
 
-from distribution.models import ResultEmail
+from distribution.models import ScriptEmail
 
 
-@admin.register(ResultEmail)
-class ResultEmailAdmin(admin.ModelAdmin):
+@admin.register(ScriptEmail)
+class ScriptEmailAdmin(admin.ModelAdmin):
     list_display = [
         "idempotency_key",
         "recipient",

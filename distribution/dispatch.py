@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from datetime import timedelta
 from email.utils import parseaddr
 from smtplib import SMTPRecipientsRefused
@@ -8,9 +9,8 @@ from django.core.mail import EmailMessage
 from django.db import transaction
 from django.utils import timezone
 
-from assessments.models import Result
-from distribution.models import ResultEmail
-
+from distribution.models import ScriptEmail
+from distribution.services import is_current
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ MAX_ERROR_LENGTH = 2000
 
 
 def message_id(email):
-    # Stable per result version: retries of the same email share an ID,
+    # Stable per verified script version: retries share an ID,
     # so mail clients can recognise a repeat.
     domain = parseaddr(settings.DEFAULT_FROM_EMAIL)[1].partition("@")[2]
 
@@ -38,13 +38,13 @@ def claim_next_email():
 
     with transaction.atomic():
         email = (
-            ResultEmail.objects
-            .select_for_update(skip_locked=True, of=("self",))
+            ScriptEmail.objects.select_for_update(skip_locked=True, of=("self",))
             .filter(
-                status=ResultEmail.Status.QUEUED,
+                status=ScriptEmail.Status.QUEUED,
+                submission__isnull=False,
                 run_after__lte=now,
-                result__assessment__archived_at__isnull=True,
-                result__assessment__course__archived_at__isnull=True,
+                submission__assessment__archived_at__isnull=True,
+                submission__assessment__course__archived_at__isnull=True,
             )
             .order_by("run_after")
             .first()
@@ -53,7 +53,7 @@ def claim_next_email():
         if email is None:
             return None
 
-        email.status = ResultEmail.Status.SENDING
+        email.status = ScriptEmail.Status.SENDING
         email.attempts += 1
         email.lease_expires_at = now + LEASE_DURATION
 
@@ -71,14 +71,11 @@ def claim_next_email():
 
 def lock_owned_email(email_id, claimed_attempt, statuses):
     # Returns the email only if this worker still owns it (fencing token).
-    email = ResultEmail.objects.select_for_update().get(
+    email = ScriptEmail.objects.select_for_update().get(
         pk=email_id,
     )
 
-    if (
-        email.status not in statuses
-        or email.attempts != claimed_attempt
-    ):
+    if email.status not in statuses or email.attempts != claimed_attempt:
         return None
 
     return email
@@ -94,8 +91,8 @@ def mark_sent(email_id, claimed_attempt):
             email_id,
             claimed_attempt,
             [
-                ResultEmail.Status.SENDING,
-                ResultEmail.Status.FAILED,
+                ScriptEmail.Status.SENDING,
+                ScriptEmail.Status.FAILED,
             ],
         )
 
@@ -103,13 +100,12 @@ def mark_sent(email_id, claimed_attempt):
             return
 
         if (
-            email.status == ResultEmail.Status.FAILED
-            and email.failure_reason
-            != ResultEmail.FailureReason.DELIVERY_UNKNOWN
+            email.status == ScriptEmail.Status.FAILED
+            and email.failure_reason != ScriptEmail.FailureReason.DELIVERY_UNKNOWN
         ):
             return
 
-        email.status = ResultEmail.Status.SENT
+        email.status = ScriptEmail.Status.SENT
         email.failure_reason = ""
         email.sent_at = now
         email.lease_expires_at = None
@@ -130,13 +126,13 @@ def mark_superseded(email_id, claimed_attempt):
         email = lock_owned_email(
             email_id,
             claimed_attempt,
-            [ResultEmail.Status.SENDING],
+            [ScriptEmail.Status.SENDING],
         )
 
         if email is None:
             return
 
-        email.status = ResultEmail.Status.SUPERSEDED
+        email.status = ScriptEmail.Status.SUPERSEDED
         email.lease_expires_at = None
 
         email.save(
@@ -155,7 +151,7 @@ def mark_failed(email_id, claimed_attempt, reason, error, retry):
         email = lock_owned_email(
             email_id,
             claimed_attempt,
-            [ResultEmail.Status.SENDING],
+            [ScriptEmail.Status.SENDING],
         )
 
         if email is None:
@@ -165,17 +161,15 @@ def mark_failed(email_id, claimed_attempt, reason, error, retry):
         email.last_error = error[:MAX_ERROR_LENGTH]
         email.lease_expires_at = None
 
-        if not Result.objects.active().filter(pk=email.result_id).exists():
-            email.status = ResultEmail.Status.SUPERSEDED
+        if not is_current(email):
+            email.status = ScriptEmail.Status.SUPERSEDED
         elif retry and email.attempts < email.max_attempts:
-            delay = RETRY_DELAYS[
-                min(email.attempts - 1, len(RETRY_DELAYS) - 1)
-            ]
+            delay = RETRY_DELAYS[min(email.attempts - 1, len(RETRY_DELAYS) - 1)]
 
-            email.status = ResultEmail.Status.QUEUED
+            email.status = ScriptEmail.Status.QUEUED
             email.run_after = now + delay
         else:
-            email.status = ResultEmail.Status.FAILED
+            email.status = ScriptEmail.Status.FAILED
 
         email.save(
             update_fields=[
@@ -190,15 +184,7 @@ def mark_failed(email_id, claimed_attempt, reason, error, retry):
 
 
 def deliver_email(email, claimed_attempt):
-    current_version = (
-        Result.objects.active()
-        .filter(pk=email.result_id)
-        .values_list("version", flat=True)
-        .first()
-    )
-
-    # The mark changed after this email was scheduled.
-    if current_version != email.result_version:
+    if not is_current(email):
         mark_superseded(email.pk, claimed_attempt)
         return
 
@@ -206,13 +192,13 @@ def deliver_email(email, claimed_attempt):
         mark_failed(
             email.pk,
             claimed_attempt,
-            ResultEmail.FailureReason.MISSING_RECIPIENT,
+            ScriptEmail.FailureReason.MISSING_RECIPIENT,
             "No recipient address.",
             retry=False,
         )
         return
 
-    # One recipient per message: students never see each other's results.
+    # One recipient and one verified script per message.
     message = EmailMessage(
         subject=email.subject,
         body=email.body,
@@ -223,30 +209,52 @@ def deliver_email(email, claimed_attempt):
     )
 
     try:
-        message.send()
+        with email.attachment.open("rb") as attachment:
+            content = attachment.read()
+        if not content:
+            raise ValueError("Empty attachment")
+        message.attach(
+            email.attachment_filename,
+            content,
+            mimetypes.guess_type(email.attachment_filename)[0]
+            or "application/octet-stream",
+        )
+    except (OSError, ValueError) as exc:
+        mark_failed(
+            email.pk,
+            claimed_attempt,
+            ScriptEmail.FailureReason.ATTACHMENT_UNAVAILABLE,
+            f"{type(exc).__name__}: attachment unavailable",
+            retry=False,
+        )
+        return
+
+    try:
+        if message.send() != 1:
+            raise RuntimeError("Email backend did not accept the message")
     except SMTPRecipientsRefused as exc:
         logger.warning(
-            "Result email %s refused by mail server",
+            "Script email %s refused by mail server",
             email.pk,
         )
         mark_failed(
             email.pk,
             claimed_attempt,
-            ResultEmail.FailureReason.RECIPIENT_REFUSED,
+            ScriptEmail.FailureReason.RECIPIENT_REFUSED,
             f"{type(exc).__name__}: {exc}",
             retry=False,
         )
         return
     except Exception as exc:
         logger.exception(
-            "Result email %s failed on attempt %s",
+            "Script email %s failed on attempt %s",
             email.pk,
             claimed_attempt,
         )
         mark_failed(
             email.pk,
             claimed_attempt,
-            ResultEmail.FailureReason.PROVIDER_ERROR,
+            ScriptEmail.FailureReason.PROVIDER_ERROR,
             f"{type(exc).__name__}: {exc}",
             retry=True,
         )
@@ -261,12 +269,12 @@ def recover_expired_sends():
     # without the lecturer choosing to retry.
     now = timezone.now()
 
-    return ResultEmail.objects.filter(
-        status=ResultEmail.Status.SENDING,
+    return ScriptEmail.objects.filter(
+        status=ScriptEmail.Status.SENDING,
         lease_expires_at__lt=now,
     ).update(
-        status=ResultEmail.Status.FAILED,
-        failure_reason=ResultEmail.FailureReason.DELIVERY_UNKNOWN,
+        status=ScriptEmail.Status.FAILED,
+        failure_reason=ScriptEmail.FailureReason.DELIVERY_UNKNOWN,
         lease_expires_at=None,
         updated_at=now,
     )

@@ -13,35 +13,11 @@ def send_student_email(student, subject, message):
     )
 
 
-def build_result_email(result):
-    student = result.enrollment.student
-    assessment = result.assessment
-
-    percentage = round(
-        (result.mark / assessment.max_mark) * 100,
-        2,
-    )
-
-    subject = f"PostGrade result: {assessment.name}"
-
-    message = (
+def build_script_email(submission):
+    student = submission.enrollment.student
+    return (
+        f"PostGrade script: {submission.assessment.name}",
         f"Hi {student.first_name},\n\n"
-        f"Your result for {assessment.name} is:\n\n"
-        f"{result.mark} / {assessment.max_mark}\n"
-        f"{percentage}%\n\n"
-        f"Regards,\n"
-        f"PostGrade"
-    )
-
-    return subject, message
-
-
-def send_result_email(result):
-    student = result.enrollment.student
-    subject, message = build_result_email(result)
-
-    send_student_email(
-        student=student,
-        subject=subject,
-        message=message,
+        f"Your verified script for {submission.assessment.name} is attached.\n\n"
+        "Regards,\nPostGrade",
     )

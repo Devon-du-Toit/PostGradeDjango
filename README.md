@@ -1,9 +1,6 @@
 # PostGrade
 
-PostGrade helps identify, verify and distribute already-marked assessments,
-with grade management and result notification for lecturers.
-
-The project aims to streamline the processing of marked assessments, including student identification, grade management, and automated result distribution.
+PostGrade identifies student numbers in uploaded scripts, supports lecturer verification, and returns verified files by tracked email delivery. No numeric marks or grades are entered or calculated.
 
 This repository contains the **Django REST API backend** for PostGrade.
 
@@ -21,40 +18,22 @@ The PostGrade frontend is developed separately using Vue.js.
 
 ## Current Status
 
-The backend provides owner-scoped courses, students/enrollments, validated
-CSV imports with dry runs and explicit updates, assessments/results,
-gradebooks/statistics, paginated filters/search and dashboard summaries.
-Uploads validate PDF/image content and return immediately while a separate
-OCR worker processes them. Lecturers verify the identity before marking;
-result-text emails are recorded with the mark and sent by a mail worker.
-Originals and recognition crops are retrieved through authenticated APIs.
+The backend provides owner-scoped courses, students/enrollments, validated CSV imports, assessments, paginated search/filtering and dashboard counts. Uploads validate PDF/image content and queue OCR or filled-bubble recognition. Lecturers verify the enrolled student, then explicitly request email delivery of that script. The mail worker attaches a stored copy of the verified file. Approval, retry and delivery history remain available.
 
-Course/assessment archiving is merged, preserving historical records/files
-and blocking archived workflows. **Merge prerequisites still apply** to
-production signup/throttling, failed recognitions in the review queue and
-Ruff lint: those changes were merged into stacked branches rather than
-master. See the
-[release integration status](DOCS/API_REFERENCE.md#14-release-integration-status)
-before treating those release rules as deployed behavior. This PR changes
-documentation only; it does not integrate the pending implementation code.
-
-Bubble recognition and QR multipage grouping remain planned. Result emails
-currently contain marks/percentages, without script attachments or student
-download access. Production hosting and a successful staging demonstration
-are still required; a container/runbook does not establish deployment.
+Course/assessment archives preserve files/audits and stop queued work. QR multipage grouping and ZIP export remain unavailable. See [MARKS_REMOVAL.md](DOCS/MARKS_REMOVAL.md) for the coordinated backend/frontend rollout and the migration that removes stored numeric results.
 
 ## Project Structure
 
 ```text
 PostGradeDjango/
 ├── accounts/               # User accounts and authentication
-├── assessments/            # Assessments, results, gradebook and statistics
+├── assessments/            # Assessments and archive lifecycle
 ├── config/                 # Django project configuration
 ├── courses/                # Courses (owned per user)
-├── distribution/           # Result email delivery and mail worker
+├── distribution/           # Verified script email delivery and mail worker
 ├── dashboard/              # Owner-scoped counts and assessment progress
 ├── students/               # Students, enrollments and CSV class-list import
-├── submissions/            # Submission upload, recognition, verification and marking
+├── submissions/            # Submission upload, recognition, verification and protected files
 ├── DOCS/                   # Project documentation
 ├── .github/                # CI workflow
 ├── .env.example            # Example environment configuration
@@ -163,13 +142,13 @@ Without a running worker, uploaded submissions remain in the `processing` state.
 
 ### 9. Run the mail worker
 
-Result emails are sent by a background worker. In a separate terminal, with the same virtual environment active:
+Requested script emails are sent by a background worker. In a separate terminal, with the same virtual environment active:
 
 ```bash
 python manage.py run_mail_worker
 ```
 
-Without a running mail worker, marks are saved normally but result emails remain queued. See [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md) for details.
+Without a mail worker, verification still succeeds but requested script emails remain queued. See [`DOCS/SCRIPT_EMAIL_DELIVERY.md`](DOCS/SCRIPT_EMAIL_DELIVERY.md) for details.
 
 ## API
 
@@ -187,7 +166,7 @@ Protected endpoints use JWT Bearer authentication:
 ```http
 Authorization: Bearer <access_token>
 ```
-The full endpoint inventory, with request, response and error examples, is in [`DOCS/API_REFERENCE.md`](DOCS/API_REFERENCE.md). Submission and recognition endpoints are covered in [`DOCS/RECOGNITION_EVIDENCE_API.md`](DOCS/RECOGNITION_EVIDENCE_API.md), and result emails in [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md).
+The full endpoint inventory, with request, response and error examples, is in [`DOCS/API_REFERENCE.md`](DOCS/API_REFERENCE.md). Submission and recognition endpoints are covered in [`DOCS/RECOGNITION_EVIDENCE_API.md`](DOCS/RECOGNITION_EVIDENCE_API.md), and script emails in [`DOCS/SCRIPT_EMAIL_DELIVERY.md`](DOCS/SCRIPT_EMAIL_DELIVERY.md).
 
 ## Running Tests
 
@@ -227,7 +206,7 @@ master yet.
 | [`DOCS/POSTGRESQL_SETUP.md`](DOCS/POSTGRESQL_SETUP.md) | Local database setup |
 | [`DOCS/RECOGNITION_EVIDENCE_API.md`](DOCS/RECOGNITION_EVIDENCE_API.md) | Submission and recognition API, quality checks |
 | [`DOCS/RECOGNITION_WORKER.md`](DOCS/RECOGNITION_WORKER.md) | Recognition worker setup and troubleshooting |
-| [`DOCS/RESULT_EMAIL_DELIVERY.md`](DOCS/RESULT_EMAIL_DELIVERY.md) | Result email delivery |
+| [`DOCS/SCRIPT_EMAIL_DELIVERY.md`](DOCS/SCRIPT_EMAIL_DELIVERY.md) | Verified script email delivery |
 | [`DOCS/BACKUP_RESTORE.md`](DOCS/BACKUP_RESTORE.md) | Database backup and recovery |
 | [`DOCS/API_CONTRACT.md`](DOCS/API_CONTRACT.md) | Pagination, filters, types and dashboard semantics |
 | [`DOCS/PERMISSIONS.md`](DOCS/PERMISSIONS.md) | Release auth matrix, signup/throttling and account follow-ups |
@@ -240,10 +219,10 @@ master yet.
 PostGrade is being developed incrementally.
 
 - **Phase 1:** Backend foundation and authentication
-- **Phase 2:** Core grading domain models and APIs
+- **Phase 2:** Course, student and assessment domain APIs
 - **Phase 3:** Assessment and document processing
 - **Phase 4:** Automated student identification
-- **Phase 5:** Result distribution and workflow automation
+- **Phase 5:** Verified script distribution and workflow automation
 - **Phase 6:** Production readiness and deployment
 
 The roadmap will evolve as the system develops.

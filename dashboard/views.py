@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from assessments.models import Assessment, Result
+from assessments.models import Assessment
 from courses.models import Course
 from dashboard.filters import AssessmentProgressFilter
 from dashboard.serializers import AssessmentProgressSerializer
@@ -21,20 +21,27 @@ class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        active_courses = Course.objects.active().filter(
-            owner=request.user,
-            year=timezone.localdate().year,
-        ).count()
+        active_courses = (
+            Course.objects.active()
+            .filter(
+                owner=request.user,
+                year=timezone.localdate().year,
+            )
+            .count()
+        )
 
         # One GROUP BY query; statuses with no submissions are filled with 0.
         counts = dict(
-            Submission.objects.active().filter(
+            Submission.objects.active()
+            .filter(
                 assessment__course__owner=request.user,
-            ).values_list("status").annotate(total=Count("id")).order_by()
+            )
+            .values_list("status")
+            .annotate(total=Count("id"))
+            .order_by()
         )
         by_status = {
-            status: counts.get(status, 0)
-            for status in Submission.Status.values
+            status: counts.get(status, 0) for status in Submission.Status.values
         }
 
         return Response(
@@ -50,8 +57,8 @@ class DashboardStatsView(APIView):
 
 def count_of(queryset, link_field):
     # A correlated COUNT subquery per assessment row. Joining enrollments,
-    # submissions and results in one query would multiply the rows
-    # (students x scripts x marks) before counting.
+    # submissions in one query would multiply the rows
+    # (students x scripts) before counting.
     return Coalesce(
         Subquery(
             queryset.order_by()
@@ -67,9 +74,15 @@ def count_of(queryset, link_field):
 def submission_status_counts(assessments):
     # One GROUP BY query for the whole page: {assessment_id: {status: n}}
     counts = defaultdict(dict)
-    rows = Submission.objects.active().filter(
-        assessment__in=assessments,
-    ).values_list("assessment_id", "status").annotate(total=Count("id")).order_by()
+    rows = (
+        Submission.objects.active()
+        .filter(
+            assessment__in=assessments,
+        )
+        .values_list("assessment_id", "status")
+        .annotate(total=Count("id"))
+        .order_by()
+    )
     for assessment_id, status, total in rows:
         counts[assessment_id][status] = total
     return counts
@@ -82,20 +95,22 @@ class DashboardAssessmentListView(generics.ListAPIView):
     search_fields = ["name", "course__code", "course__name"]
 
     def get_queryset(self):
-        return Assessment.objects.active().filter(
-            course__owner=self.request.user,
-        ).select_related(
-            "course",
-        ).annotate(
-            enrolled_count=count_of(
-                Enrollment.objects.filter(course=OuterRef("course")),
+        return (
+            Assessment.objects.active()
+            .filter(
+                course__owner=self.request.user,
+            )
+            .select_related(
                 "course",
-            ),
-            results_count=count_of(
-                Result.objects.filter(assessment=OuterRef("pk")),
-                "assessment",
-            ),
-        ).order_by(F("date").desc(nulls_last=True), "-id")
+            )
+            .annotate(
+                enrolled_count=count_of(
+                    Enrollment.objects.filter(course=OuterRef("course")),
+                    "course",
+                ),
+            )
+            .order_by(F("date").desc(nulls_last=True), "-id")
+        )
 
     def paginate_queryset(self, queryset):
         page = super().paginate_queryset(queryset)

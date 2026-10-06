@@ -86,7 +86,7 @@ Out of scope:
 
 ---
 
-Release integration note: [API_REFERENCE.md §14](API_REFERENCE.md#14-release-integration-status)
+Release integration note: [API_REFERENCE.md](API_REFERENCE.md)
 identifies the remaining failed-recognition queue prerequisite. Archive enforcement, protected
 downloads, pagination and file validation are already implemented.
 
@@ -130,7 +130,6 @@ The `status` field of a submission describes its position in the review workflow
 | `recognition_failed` | Recognition raised an error on every attempt. Requires a retry or manual verification. | Worker, after the final failed attempt |
 | `uploaded` | File stored before recognition existed; no enrollment assigned. | Submissions created before background recognition |
 | `verified` | A lecturer confirmed or corrected the enrollment. | `POST /submissions/{id}/verify/` |
-| `marked` | A mark was saved and the result email was generated. | `POST /submissions/{id}/mark/` |
 
 ```
 upload / file replacement
@@ -147,9 +146,6 @@ upload / file replacement
                                       |  lecturer verifies
                                       v
                                   verified
-                                      |  lecturer enters mark
-                                      v
-                                   marked
 ```
 
 Clients should poll `GET /api/submissions/{id}/` (or the list endpoint) while a submission is `processing`. See `DOCS/RECOGNITION_WORKER.md` for how background processing works.
@@ -310,7 +306,7 @@ Submission responses include the most recent background recognition job as `reco
 
 **Purpose/Description**
 
-Uploads a marked script for an assessment and queues it for background recognition. The response is returned immediately; it does not wait for recognition.
+Uploads a script for an assessment and queues it for background recognition. The response is returned immediately; it does not wait for recognition.
 
 **Inputs**
 
@@ -493,7 +489,7 @@ Confirms or corrects the student associated with a submission (Functional Specif
 **Processing**
 
 1. The enrollment must belong to the lecturer and to the submission's course.
-2. A `marked` or legacy `uploaded` submission cannot be verified; the locked database status determines whether the transition is legal.
+2. A legacy `uploaded` submission cannot be verified directly. The locked database status determines whether the transition is legal. Repeating an unchanged verified enrollment is idempotent.
 3. `enrollment` is set and `status` becomes `verified`.
 4. The recognition evidence is **not** modified. `recognition.suggested_enrollment` continues to show what recognition originally suggested.
 
@@ -502,7 +498,7 @@ Confirms or corrects the student associated with a submission (Functional Specif
 | Status | Description |
 |---|---|
 | `200 OK` | The updated submission, including its unchanged `recognition` object. |
-| `400 Bad Request` | Missing enrollment, wrong course, or submission already marked. |
+| `400 Bad Request` | Missing enrollment, wrong course, or an illegal transition. |
 | `404 Not Found` | Submission or enrollment not found for this lecturer. |
 
 A submission may be verified while it is still `processing`. The lecturer's decision takes precedence: when recognition finishes, its result is discarded.
@@ -583,23 +579,24 @@ Replaces a submission's file, for example with a clearer scan. Existing endpoint
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `file` | file | Yes | The replacement file. |
+| `version` | integer | Yes | Current submission version. |
 
 **Processing**
 
-1. A `marked` submission's file cannot be replaced.
+1. The current version is checked under a row lock; stale replacement is rejected. Unsent script emails are superseded and the version increments.
 2. Any queued or running job for the old file is `cancelled`; a running job's result is discarded when it finishes.
-3. The enrollment is cleared, including a previously verified one, because the new file may belong to a different student. An `enrollment` sent in the same request is ignored.
+3. The enrollment is cleared, including a previously verified one, because the new file may belong to a different student. A different enrollment sent in the request is rejected; verification must be repeated for the replacement.
 4. The status becomes `processing` and a new job is queued for the new file.
 5. The old original is deleted only after the replacement transaction commits.
 
-A `PATCH` without `file` updates the given fields but **does not change the status** (status changes go through the workflow endpoints). Changing `enrollment` this way is rejected while the submission is `processing`, because the running recognition job would otherwise overwrite it; use `POST /api/submissions/{id}/verify/` instead.
+A generic PATCH cannot change the enrollment or assessment. Use the verify action for student changes and file replacement for a new scan.
 
 **Outputs**
 
 | Status | Description |
 |---|---|
 | `200 OK` | The updated submission, with status `processing` and a new `queued` job. |
-| `400 Bad Request` | The submission is `marked`, or the file is invalid. |
+| `400 Bad Request` | The version is missing/stale, a forbidden student/assessment change is supplied, or the file is invalid. |
 | `401 Unauthorized` | Missing or invalid token. |
 | `404 Not Found` | The submission does not exist or belongs to another lecturer. |
 
@@ -615,17 +612,9 @@ authenticated recognition-image endpoint.
 
 Upload/replacement validates actual PDF/JPG/JPEG/PNG bytes, a 15 MB limit,
 at most 20 PDF pages and decoded dimensions at most 6000px. Recognition
-reads page 1. A marked file cannot be replaced; an unmarked replacement
-cancels old jobs and removes the old original after commit. DELETE removes
-the original and recognition crops after commit and retains the separate
-Result, while the current submission-bound audit relationship cascades.
-There is no timed retention purge.
+reads page 1. Replacement clears enrollment, cancels old jobs and removes the old original after commit. DELETE removes original/crop files after commit; submission-bound audits currently cascade. Email delivery snapshots/history retain a null subject link and are not deliverable. There is no timed retention purge.
 
-Generic PATCH requires `version`; replacement's version/audit handling and
-marked identity edits still have the #6 acceptance gaps. Do not describe
-this as a complete optimistic-concurrency contract. Archive rules from #39
-block these paths and cancel queued work without deleting files; see
-[ARCHIVING.md](ARCHIVING.md).
+Replacement requires `version` and checks it while locked. Identity changes use auditable verification, not generic PATCH. Archive rules block these paths and cancel queued work without deleting files; see [ARCHIVING.md](ARCHIVING.md).
 
 ## 7. Error Responses
 
@@ -653,9 +642,9 @@ Field validation errors map each field to a list of messages:
 | `400` | Assessment belongs to another lecturer | `{"assessment": ["You cannot upload a submission for this assessment."]}` |
 | `400` | Verify without enrollment | `{"detail": "Enrollment is required."}` |
 | `400` | Verify with enrollment from another course | `{"detail": "Enrollment does not belong to the submission's course."}` |
-| `400` | Verify a marked submission | `{"detail": "A marked submission cannot be re-verified."}` |
+| `400` | Verify a legacy uploaded submission | `{"detail": "Illegal transition from uploaded to verified"}` |
 | `400` | Retry a submission that is not `recognition_failed` or `needs_verification` | `{"detail": "Only submissions whose recognition failed or needs verification can be retried."}` |
-| `400` | Replace the file of a marked submission | `{"file": ["The file of a marked submission cannot be replaced."]}` |
+| `400` | Replace without current version | `{"version": "This field is required on update."}` |
 | `400` | `PATCH` `enrollment` while the submission is `processing` | `{"enrollment": ["Recognition is still running. Wait for it to finish, or use verify."]}` |
 | `401` | No `Authorization` header | `{"detail": "Authentication credentials were not provided."}` |
 | `401` | Invalid or expired token | See 7.3 |
@@ -867,8 +856,12 @@ All columns were read, but the image is blurred and the confidence is below the 
 | 09 | Originals and region images are cleaned up after committed deletion; old originals after replacement. No timed purge. | Implemented (#22) |
 | 10 | If a file is replaced while the old file's job is running, that job's recognition attempt may be recorded after the new job's, and briefly appear as the latest `recognition` until the new job completes. Submission status and enrollment are not affected. Requires linking each attempt to its job. | TBD |
 | 11 | Vue has processing/failed states and polling. Review-panel/retry integration and safe interrupted-upload retry still need final cross-repository validation. | Integration follow-up |
-| 12 | Generic `PATCH /api/submissions/{id}/` can still change `enrollment` outside the verify workflow (for example on a `marked` submission). Only the `processing` case is blocked here; workflow enforcement belongs to Issue #6. | TBD |
+| 12 | Generic student/assessment changes are rejected; verification and file replacement lock and version the subject. | Implemented with script-only delivery |
 
 ## Bubble recognition release
 
 Filled-bubble decoding is implemented with versioned standard/compact eight-column templates. It never reads the writing boxes using OCR. See [Bubble recognition](BUBBLE_RECOGNITION.md) for capability discovery, per-column evidence, geometry, thresholds and validation limits. `template_version` and `column_scores` are additive evidence fields.
+
+## Script-only update
+
+The terminal recognition state is verified; numeric marking is removed. Use the explicit script email endpoint after verification. Generic student/assessment changes are rejected. Replacing a file requires its current version, clears verification and supersedes unsent deliveries. See [SCRIPT_EMAIL_DELIVERY.md](SCRIPT_EMAIL_DELIVERY.md).

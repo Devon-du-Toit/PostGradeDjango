@@ -5,34 +5,53 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from assessments.models import Assessment
-from distribution.filters import ResultEmailFilter
-from distribution.models import ResultEmail
-from distribution.serializers import ResultEmailSerializer
+from distribution.filters import ScriptEmailFilter
+from distribution.models import ScriptEmail
+from distribution.serializers import ScriptEmailSerializer
 from distribution.services import (
     approve_assessment_emails,
     approve_email,
     retry_email,
+    schedule_script_email,
 )
+from submissions.models import Submission
 
 
 def owned_emails(user):
-    return ResultEmail.objects.filter(
-        result__assessment__course__owner=user,
-        result__assessment__archived_at__isnull=True,
-        result__assessment__course__archived_at__isnull=True,
+    return ScriptEmail.objects.filter(
+        submission__assessment__course__owner=user,
+        submission__assessment__archived_at__isnull=True,
+        submission__assessment__course__archived_at__isnull=True,
     ).select_related(
-        "result__enrollment__student",
+        "submission",
+        "enrollment__student",
     )
 
 
-class AssessmentResultEmailListView(generics.ListAPIView):
-    serializer_class = ResultEmailSerializer
+class SubmissionScriptEmailView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
-    filterset_class = ResultEmailFilter
+
+    def post(self, request, pk):
+        submission = get_object_or_404(
+            Submission.objects.active(), pk=pk, assessment__course__owner=request.user
+        )
+        try:
+            email = schedule_script_email(submission)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            ScriptEmailSerializer(email).data, status=status.HTTP_202_ACCEPTED
+        )
+
+
+class AssessmentScriptEmailListView(generics.ListAPIView):
+    serializer_class = ScriptEmailSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_class = ScriptEmailFilter
     search_fields = [
-        "result__enrollment__student__student_number",
-        "result__enrollment__student__first_name",
-        "result__enrollment__student__last_name",
+        "enrollment__student__student_number",
+        "enrollment__student__first_name",
+        "enrollment__student__last_name",
         "recipient",
     ]
 
@@ -43,20 +62,24 @@ class AssessmentResultEmailListView(generics.ListAPIView):
             course__owner=self.request.user,
         )
 
-        return owned_emails(self.request.user).filter(
-            result__assessment=assessment,
-        ).order_by("-created_at", "-id")
+        return (
+            owned_emails(self.request.user)
+            .filter(
+                submission__assessment=assessment,
+            )
+            .order_by("-created_at", "-id")
+        )
 
 
-class ResultEmailDetailView(generics.RetrieveAPIView):
-    serializer_class = ResultEmailSerializer
+class ScriptEmailDetailView(generics.RetrieveAPIView):
+    serializer_class = ScriptEmailSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return owned_emails(self.request.user)
 
 
-class ResultEmailApproveView(generics.GenericAPIView):
+class ScriptEmailApproveView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
@@ -76,12 +99,12 @@ class ResultEmailApproveView(generics.GenericAPIView):
             )
 
         return Response(
-            ResultEmailSerializer(email).data,
+            ScriptEmailSerializer(email).data,
             status=status.HTTP_202_ACCEPTED,
         )
 
 
-class AssessmentResultEmailApproveView(generics.GenericAPIView):
+class AssessmentScriptEmailApproveView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, assessment_id):
@@ -91,10 +114,10 @@ class AssessmentResultEmailApproveView(generics.GenericAPIView):
             course__owner=request.user,
         )
 
-        approved = approve_assessment_emails(
-            assessment,
-            request.user,
-        )
+        try:
+            approved = approve_assessment_emails(assessment, request.user)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
             {
@@ -104,7 +127,7 @@ class AssessmentResultEmailApproveView(generics.GenericAPIView):
         )
 
 
-class ResultEmailRetryView(generics.GenericAPIView):
+class ScriptEmailRetryView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
@@ -116,9 +139,7 @@ class ResultEmailRetryView(generics.GenericAPIView):
         try:
             email = retry_email(
                 email.pk,
-                confirm_duplicate=bool(
-                    request.data.get("confirm_duplicate", False)
-                ),
+                confirm_duplicate=request.data.get("confirm_duplicate", False) is True,
             )
         except ValidationError as exc:
             return Response(
@@ -129,6 +150,6 @@ class ResultEmailRetryView(generics.GenericAPIView):
             )
 
         return Response(
-            ResultEmailSerializer(email).data,
+            ScriptEmailSerializer(email).data,
             status=status.HTTP_202_ACCEPTED,
         )

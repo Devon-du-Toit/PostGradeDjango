@@ -44,8 +44,8 @@ class RecognitionEvidenceTestMixin(TemporaryMediaMixin):
         assessment = Assessment.objects.create(
             course=course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
+
+
         )
 
         self.submission = Submission.objects.create(

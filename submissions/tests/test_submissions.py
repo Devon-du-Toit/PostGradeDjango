@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from assessments.models import Assessment, Result
+from assessments.models import Assessment
 from courses.models import Course
 from distribution.dispatch import process_next_email
 from students.models import Enrollment, Student
@@ -33,6 +33,7 @@ def make_valid_pdf_bytes():
         return document.tobytes()
     finally:
         document.close()
+
 
 class SubmissionModelTests(TestCase):
     def setUp(self):
@@ -65,8 +66,6 @@ class SubmissionModelTests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
     def test_create_submission_without_enrollment(self):
@@ -150,15 +149,11 @@ class SubmissionAPITests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.other_assessment = Assessment.objects.create(
             course=self.other_course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.client.force_authenticate(user=self.user)
@@ -293,11 +288,11 @@ class SubmissionAPITests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         submission.refresh_from_db()
 
-        self.assertEqual(submission.enrollment, enrollment)
+        self.assertIsNone(submission.enrollment)
 
     def test_cannot_match_submission_to_enrollment_from_other_course(self):
         other_owned_course = Course.objects.create(
@@ -387,233 +382,6 @@ class SubmissionAPITests(TestCase):
 
         self.assertIsNone(submission.enrollment)
 
-    def  test_can_create_result_from_verified_submission(self):
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="11111111",
-            first_name="Marked",
-            last_name="Student",
-            email="11111111@example.com"
-        )
-
-        enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            file=SimpleUploadedFile(
-                "marked.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="marked.pdf",
-            status=Submission.Status.VERIFIED,
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{submission.id}/mark/",
-            {"mark": 75},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_201_CREATED,
-        )
-
-        result = Result.objects.get(
-            assessment=self.assessment,
-            enrollment=enrollment,
-        )
-
-        self.assertEqual(result.mark, 75)
-
-        # Marking queues the email; the mail worker sends it.
-        self.assertEqual(len(mail.outbox), 0)
-        self.assertEqual(
-            response.data["email_delivery"]["status"],
-            "queued",
-        )
-
-        process_next_email()
-
-        self.assertEqual(len(mail.outbox), 1)
-
-        email = mail.outbox[0]
-
-        self.assertEqual(
-            email.to,
-            ["11111111@example.com"],
-        )
-
-        self.assertIn(
-            "Test 1",
-            email.subject,
-        )
-
-        self.assertIn(
-            "75",
-            email.body,
-        )
-
-    def test_marking_verified_submission_updates_existing_result(self):
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="22222222",
-            first_name="Existing",
-            last_name="Student",
-            email="22222222@example.com",
-        )
-
-        enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            file=SimpleUploadedFile(
-                "marked.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="marked.pdf",
-            status=Submission.Status.VERIFIED,
-        )
-
-        Result.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            mark=60,
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{submission.id}/mark/",
-            {"mark": 80},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_200_OK,
-        )
-
-        self.assertEqual(
-            Result.objects.filter(
-                assessment=self.assessment,
-                enrollment=enrollment,
-            ).count(),
-            1,
-        )
-
-        result = Result.objects.get(
-            assessment=self.assessment,
-            enrollment=enrollment,
-        )
-
-        self.assertEqual(result.mark, 80)
-
-    def test_cannot_mark_unmatched_submission(self):
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            file=SimpleUploadedFile(
-                "unmatched.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="unmatched.pdf",
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{submission.id}/mark/",
-            {"mark": 50},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_400_BAD_REQUEST,
-        )
-
-        self.assertEqual(Result.objects.count(), 0)
-
-    def test_cannot_enter_mark_above_max_mark_for_verified_submission(self):
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="33333333",
-            first_name="High",
-            last_name="Mark",
-        )
-
-        enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            file=SimpleUploadedFile(
-                "marked.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="marked.pdf",
-            status=Submission.Status.VERIFIED,
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{submission.id}/mark/",
-            {"mark": 101},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_400_BAD_REQUEST,
-        )
-
-        self.assertEqual(Result.objects.count(), 0)
-
-    def test_cannot_mark_another_users_submission(self):
-        other_student = Student.objects.create(
-            owner=self.other_user,
-            student_number="44444444",
-            first_name="Other",
-            last_name="Student",
-        )
-
-        other_enrollment = Enrollment.objects.create(
-            course=self.other_course,
-            student=other_student,
-        )
-
-        other_submission = Submission.objects.create(
-            assessment=self.other_assessment,
-            enrollment=other_enrollment,
-            file=SimpleUploadedFile(
-                "other.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="other.pdf",
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{other_submission.id}/mark/",
-            {"mark": 50},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_404_NOT_FOUND,
-        )
-
     def test_new_submission_status_is_uploaded(self):
         submission = Submission.objects.create(
             assessment=self.assessment,
@@ -662,7 +430,7 @@ class SubmissionAPITests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         submission.refresh_from_db()
 
@@ -671,53 +439,7 @@ class SubmissionAPITests(TestCase):
             Submission.Status.UPLOADED,
         )
 
-    def test_marking_verified_submission_changes_status_to_marked(self):
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="66666666",
-            first_name="Marked",
-            last_name="Student",
-            email="66666666@example.com",
-        )
-
-        enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            file=SimpleUploadedFile(
-                "paper.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="paper.pdf",
-            status=Submission.Status.VERIFIED,
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{submission.id}/mark/",
-            {"mark": 70},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_201_CREATED,
-        )
-
-        submission.refresh_from_db()
-
-        self.assertEqual(
-            submission.status,
-            Submission.Status.MARKED,
-        )
-
-    @patch(
-        "submissions.jobs.recognize_submission"
-    )
+    @patch("submissions.jobs.recognize_submission")
     def test_upload_automatically_matches_submission(
         self,
         mock_recognize_submission,
@@ -775,10 +497,7 @@ class SubmissionAPITests(TestCase):
             Submission.Status.MATCHED,
         )
 
-
-    @patch(
-        "submissions.jobs.recognize_submission"
-    )
+    @patch("submissions.jobs.recognize_submission")
     def test_upload_needs_verification_when_recognition_fails(
         self,
         mock_recognize_submission,
@@ -823,16 +542,12 @@ class SubmissionAPITests(TestCase):
             Submission.Status.NEEDS_VERIFICATION,
         )
 
-    @patch(
-        "submissions.jobs.recognize_submission"
-    )
+    @patch("submissions.jobs.recognize_submission")
     def test_upload_succeeds_when_recognition_raises_exception(
-            self,
-            mock_recognize_submission,
+        self,
+        mock_recognize_submission,
     ):
-        mock_recognize_submission.side_effect = RuntimeError(
-            "OCR failed"
-        )
+        mock_recognize_submission.side_effect = RuntimeError("OCR failed")
 
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
@@ -873,48 +588,6 @@ class SubmissionAPITests(TestCase):
             submission.recognition_jobs.get().last_error,
         )
 
-    def test_cannot_mark_matched_but_unverified_submission(self):
-        student = Student.objects.create(
-            owner=self.user,
-            student_number="77777777",
-            first_name="Matched",
-            last_name="Student",
-        )
-
-        enrollment = Enrollment.objects.create(
-            course=self.course,
-            student=student,
-        )
-
-        submission = Submission.objects.create(
-            assessment=self.assessment,
-            enrollment=enrollment,
-            file=SimpleUploadedFile(
-                "paper.pdf",
-                b"fake pdf content",
-                content_type="application/pdf",
-            ),
-            original_filename="paper.pdf",
-            status=Submission.Status.MATCHED,
-        )
-
-        response = self.client.post(
-            f"/api/submissions/{submission.id}/mark/",
-            {"mark": 70},
-            format="json",
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_400_BAD_REQUEST,
-        )
-
-        self.assertEqual(
-            Result.objects.count(),
-            0,
-        )
-
-
 
 class SubmissionFileDownloadTests(TestCase):
     """
@@ -947,8 +620,6 @@ class SubmissionFileDownloadTests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-            max_mark=100,
-            weight=20,
         )
 
         self.submission = Submission.objects.create(
@@ -964,9 +635,7 @@ class SubmissionFileDownloadTests(TestCase):
     def test_owner_can_download_their_submission_file(self):
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/file/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/file/")
 
         self.assertEqual(
             response.status_code,
@@ -981,9 +650,7 @@ class SubmissionFileDownloadTests(TestCase):
         # different lecturer who does not own this course.
         self.client.force_authenticate(user=self.other_user)
 
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/file/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/file/")
 
         self.assertEqual(
             response.status_code,
@@ -991,9 +658,7 @@ class SubmissionFileDownloadTests(TestCase):
         )
 
     def test_anonymous_user_cannot_download_submission_file(self):
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/file/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/file/")
 
         self.assertIn(
             response.status_code,
@@ -1006,9 +671,7 @@ class SubmissionFileDownloadTests(TestCase):
     def test_download_returns_404_for_nonexistent_submission(self):
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.get(
-            "/api/submissions/999999/file/"
-        )
+        response = self.client.get("/api/submissions/999999/file/")
 
         self.assertEqual(
             response.status_code,

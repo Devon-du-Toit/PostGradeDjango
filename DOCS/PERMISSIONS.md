@@ -1,6 +1,6 @@
 # Permissions and account lifecycle (#8)
 
-Release integration documentation. The implementation must reach `master` before these release rules apply there; see [API reference integration status](API_REFERENCE.md#14-release-integration-status).
+Release integration documentation. The implementation must reach `master` before these release rules apply there; see [API reference integration status](API_REFERENCE.md).
 
 How access to the PostGrade API is controlled today, which decisions were made,
 and what is deliberately left for later.
@@ -33,19 +33,17 @@ Legend: **✓** allowed · **own** only objects the user owns (others → 404) �
 | `courses/{id}/students/` | GET | ✗ | own | own | own |
 | `courses/{id}/import-students/` | POST (CSV) | ✗ | own | own | own |
 | `courses/{id}/assessments/` | GET POST | ✗ | own | own | own |
-| `courses/{id}/gradebook/` | GET | ✗ | own | own | own |
 | `students/`, `students/{id}/` | GET POST PUT PATCH DELETE | ✗ | own | own | own |
 | `students/{id}/email/` | POST | ✗ | own | own | own |
 | `enrollments/` (also `students/enrollments/`) | GET POST | ✗ | own | own | own |
-| `assessments/{id}/`, `.../statistics/` | GET PUT PATCH DELETE | ✗ | own | own | own |
-| `assessments/{id}/results/`, `results/{id}/` | GET POST PUT PATCH DELETE | ✗ | own | own | own |
+| `assessments/{id}/` | GET PUT PATCH DELETE | ✗ | own | own | own |
 | `submissions/`, `submissions/{id}/` | GET POST PUT PATCH DELETE | ✗ | own | own | own |
 | `submissions/verification-queue/` | GET | ✗ | own | own | own |
-| `submissions/{id}/verify/`, `.../mark/` | POST | ✗ | own | own | own |
+| `submissions/{id}/verify/`, `.../email/` | POST | ✗ | own | own | own |
 | `submissions/{id}/file/`, `.../recognition-image/` | GET | ✗ | own | own | own |
 | `submissions/{id}/retry-recognition/` | POST | ✗ | own | own | own |
-| `assessments/{id}/result-emails/` (+ `approve/`) | GET POST | ✗ | own | own | own |
-| `result-emails/{id}/` (+ `approve/`, `retry/`) | GET POST | ✗ | own | own | own |
+| `assessments/{id}/script-emails/` (+ `approve/`) | GET POST | ✗ | own | own | own |
+| `script-emails/{id}/` (+ `approve/`, `retry/`) | GET POST | ✗ | own | own | own |
 | `dashboard/stats/`, `dashboard/assessments/` | GET | ✗ | own | own | own |
 | Django admin `/admin/` | – | ✗ | ✗ | ✗ | staff users only |
 
@@ -59,7 +57,7 @@ owner filter, so it is a follow-up (F1), not a gap in the current scope.
 ## Verified
 
 - Cross-owner probe of all reads, writes, deletes, file downloads, CSV
-  import, gradebook, statistics, recognition and email actions: a second
+  import, recognition and email actions: a second
   lecturer gets 404/400 and nothing changes (review comment on #8).
 - `courses/{id}/students/` for another lecturer's course now answers 404
   like the other nested routes (it used to answer `200` with an empty list).
