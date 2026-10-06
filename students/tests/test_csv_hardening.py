@@ -142,7 +142,7 @@ class CSVHardeningTests(APITestCase):
         student = self.student()
         with patch.object(
             Enrollment.objects,
-            "get_or_create",
+            "bulk_create",
             side_effect=IntegrityError("synthetic conflict"),
         ):
             response = self.upload(
