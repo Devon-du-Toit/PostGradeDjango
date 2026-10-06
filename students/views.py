@@ -25,7 +25,7 @@ class StudentEmailView(APIView):
 
     def post(self, request, pk):
         student = get_object_or_404(
-            Student,
+            Student.objects.active(),
             pk=pk,
             owner=request.user,
         )
@@ -70,20 +70,42 @@ class StudentListCreateView(generics.ListCreateAPIView):
     search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
-        return Student.objects.filter(
-            owner=self.request.user,
-        ).order_by("student_number", "id")
+        return (
+            Student.objects.active()
+            .filter(
+                owner=self.request.user,
+            )
+            .order_by("student_number", "id")
+        )
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
 
 class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    def perform_destroy(self, instance):
+        from students.lifecycle import archive_student
+
+        try:
+            archive_student(
+                instance.pk,
+                self.request.user,
+                self.request.data.get("version"),
+                self.request.data.get("reason", ""),
+            )
+        except Exception as exc:
+            from django.core.exceptions import ValidationError
+            from rest_framework.exceptions import ValidationError as APIValidationError
+
+            if isinstance(exc, ValidationError):
+                raise APIValidationError(exc.messages) from exc
+            raise
+
     serializer_class = StudentSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Student.objects.filter(owner=self.request.user)
+        return Student.objects.active().filter(owner=self.request.user)
 
 
 class EnrollmentListCreateView(generics.ListCreateAPIView):
@@ -97,7 +119,7 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
     ]
 
     def get_queryset(self):
-        return (
+        queryset = (
             Enrollment.objects.filter(
                 course__owner=self.request.user,
                 course__archived_at__isnull=True,
@@ -106,6 +128,11 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
             .select_related("student")
             .order_by("course_id", "student__student_number", "id")
         )
+        if self.request.query_params.get("include_withdrawn") != "true":
+            queryset = queryset.filter(
+                withdrawn_at__isnull=True, student__archived_at__isnull=True
+            )
+        return queryset
 
 
 class CourseStudentListView(generics.ListAPIView):
@@ -120,10 +147,15 @@ class CourseStudentListView(generics.ListAPIView):
             pk=self.kwargs["course_id"],
             owner=self.request.user,
         )
-        return Student.objects.filter(
-            owner=self.request.user,
-            enrollments__course=course,
-        ).order_by("student_number", "id")
+        return (
+            Student.objects.active()
+            .filter(
+                owner=self.request.user,
+                enrollments__course=course,
+                enrollments__withdrawn_at__isnull=True,
+            )
+            .order_by("student_number", "id")
+        )
 
 
 class StudentCSVImportView(generics.GenericAPIView):
@@ -154,6 +186,7 @@ class StudentCSVImportView(generics.GenericAPIView):
                 request.user,
                 uploaded_file,
                 update_existing=update_existing,
+                course=course,
                 serializer_context={"request": request},
             )
         except CSVFileError as exc:
@@ -198,3 +231,61 @@ class StudentCSVImportView(generics.GenericAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class EnrollmentDetailView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    restore = False
+
+    def mutate(self, request, pk):
+        from django.core.exceptions import ValidationError
+        from rest_framework.exceptions import ValidationError as APIValidationError
+
+        from students.lifecycle import withdraw_enrollment
+
+        try:
+            enrollment = withdraw_enrollment(
+                pk,
+                request.user,
+                request.data.get("version"),
+                request.data.get("reason", ""),
+                restore=self.restore,
+            )
+        except ValidationError as exc:
+            raise APIValidationError(exc.messages) from exc
+        return Response(
+            EnrollmentSerializer(enrollment, context={"request": request}).data
+        )
+
+    def delete(self, request, pk):
+        return self.mutate(request, pk)
+
+
+class EnrollmentRestoreView(EnrollmentDetailView):
+    restore = True
+    http_method_names = ["post", "options"]
+
+    def post(self, request, pk):
+        return self.mutate(request, pk)
+
+
+class StudentRestoreView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.core.exceptions import ValidationError
+        from rest_framework.exceptions import ValidationError as APIValidationError
+
+        from students.lifecycle import archive_student
+
+        try:
+            student = archive_student(
+                pk,
+                request.user,
+                request.data.get("version"),
+                request.data.get("reason", ""),
+                restore=True,
+            )
+        except ValidationError as exc:
+            raise APIValidationError(exc.messages) from exc
+        return Response(StudentSerializer(student, context={"request": request}).data)

@@ -4,6 +4,9 @@ Request parsing/content validation stays in serializers. Lock order, audit/versi
 updates, job cancellation and after-commit storage cleanup stay together here.
 """
 
+from pathlib import Path
+from uuid import uuid4
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
@@ -12,7 +15,7 @@ from distribution.services import supersede_submission_emails
 from submissions.jobs import cancel_active_jobs, enqueue_recognition
 from submissions.lifecycle import lock_active_assessment, lock_submission_scope
 from submissions.models import RecognitionJob, Submission, SubmissionAudit
-from submissions.signals import delete_file_after_commit
+from submissions.retention import retain_file_revision
 
 
 def create_submission(validated_data, actor):
@@ -99,9 +102,12 @@ def replace_submission(instance, validated_data, actor):
             raise ValidationError(
                 "Use verification for student changes or replace the file."
             )
-        old_storage, old_name = locked.file.storage, locked.file.name
+        retain_file_revision(locked)
         validated_data.update(
             original_filename=validated_data["file"].name,
+        )
+        validated_data["file"].name = (
+            uuid4().hex + Path(validated_data["file"].name).suffix.lower()
         )
         cancel_active_jobs(locked)
         supersede_submission_emails(locked)
@@ -116,6 +122,4 @@ def replace_submission(instance, validated_data, actor):
             setattr(locked, name, value)
         locked.save()
         enqueue_recognition(locked)
-        if old_name and old_name != locked.file.name:
-            delete_file_after_commit(old_storage, old_name, f"submission {locked.pk}")
     return locked

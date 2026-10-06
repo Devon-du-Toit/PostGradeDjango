@@ -1,7 +1,7 @@
 import logging
 
 from django.db import transaction
-from django.db.models.signals import post_delete
+from django.db.models.signals import post_delete, pre_delete
 from django.dispatch import receiver
 
 from submissions.models import RecognitionAttempt, ScriptPage, ScriptUpload, Submission
@@ -57,4 +57,28 @@ def delete_script_page_file(sender, instance, **kwargs):
     if instance.file:
         delete_file_after_commit(
             instance.file.storage, instance.file.name, f"script evidence {instance.pk}"
+        )
+
+
+@receiver(pre_delete, sender="students.Enrollment")
+def protect_referenced_membership(sender, instance, **kwargs):
+    from django.db.models import Q
+    from django.db.models.deletion import ProtectedError
+
+    from distribution.models import ScriptEmail
+    from submissions.models import ScriptPage, SubmissionAudit
+
+    if (
+        instance.submissions.exists()
+        or ScriptPage.objects.filter(
+            Q(suggested_enrollment=instance) | Q(linked_enrollment=instance)
+        ).exists()
+        or SubmissionAudit.objects.filter(
+            Q(previous_enrollment=instance) | Q(new_enrollment=instance)
+        ).exists()
+        or ScriptEmail.objects.filter(enrollment=instance).exists()
+    ):
+        raise ProtectedError(
+            "Withdraw referenced memberships instead of deleting their history.",
+            [instance],
         )

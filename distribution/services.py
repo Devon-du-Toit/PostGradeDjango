@@ -71,6 +71,13 @@ def schedule_script_email(submission):
                 or submission.enrollment_id is None
             ):
                 raise ValidationError("Verify the student before emailing the script.")
+            if (
+                submission.enrollment.withdrawn_at is not None
+                or submission.enrollment.student.archived_at is not None
+            ):
+                raise ValidationError(
+                    "Restore class membership before emailing scripts."
+                )
             if submission.enrollment.course_id != submission.assessment.course_id:
                 raise ValidationError(
                     "The verified student must belong to the assessment's course."
@@ -170,6 +177,7 @@ def approve_assessment_emails(assessment, user):
         ):
             raise ValidationError("Archived assessment emails cannot be approved.")
         return ScriptEmail.objects.filter(
+            submission__in=Submission.objects.active(),
             submission__assessment=assessment,
             submission__status=Submission.Status.VERIFIED,
             submission_version=F("submission__version"),

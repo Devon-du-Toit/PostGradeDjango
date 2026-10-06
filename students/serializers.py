@@ -12,6 +12,8 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = [
             "id",
+            "version",
+            "archived_at",
             "student_number",
             "first_name",
             "last_name",
@@ -21,9 +23,18 @@ class StudentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "version",
+            "archived_at",
             "created_at",
             "updated_at",
         ]
+
+    def validate(self, attrs):
+        if self.instance is not None and self.instance.archived_at:
+            raise serializers.ValidationError(
+                "Restore the archived contact explicitly before editing or importing."
+            )
+        return attrs
 
     def validate_student_number(self, student_number):
         # The owner comes from the request, so DRF cannot enforce
@@ -58,10 +69,11 @@ class StudentSerializer(serializers.ModelSerializer):
         try:
             with transaction.atomic():
                 current = get_object_or_404(
-                    Student.objects.select_for_update(),
+                    Student.objects.active().select_for_update(),
                     pk=instance.pk,
                     owner=self.context["request"].user,
                 )
+                current.version += 1
                 return super().update(current, validated_data)
         except IntegrityError as exc:
             raise serializers.ValidationError(
@@ -70,6 +82,10 @@ class StudentSerializer(serializers.ModelSerializer):
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
+    student_version = serializers.IntegerField(source="student.version", read_only=True)
+    student_archived_at = serializers.DateTimeField(
+        source="student.archived_at", read_only=True
+    )
     student_number = serializers.CharField(
         source="student.student_number", read_only=True
     )
@@ -86,6 +102,11 @@ class EnrollmentSerializer(serializers.ModelSerializer):
             "id",
             "course",
             "student",
+            "student_version",
+            "student_archived_at",
+            "version",
+            "withdrawn_at",
+            "withdrawal_reason",
             "created_at",
             "student_number",
             "first_name",
@@ -93,6 +114,9 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "version",
+            "withdrawn_at",
+            "withdrawal_reason",
             "created_at",
         ]
 
@@ -100,6 +124,10 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         course = attrs["course"]
         student = attrs["student"]
+        if student.archived_at:
+            raise serializers.ValidationError(
+                "Restore the archived student before enrolling."
+            )
 
         if course.owner != request.user:
             raise serializers.ValidationError(
@@ -120,7 +148,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
                 owner=self.context["request"].user,
             )
             student = get_object_or_404(
-                Student.objects.select_for_update(),
+                Student.objects.active().select_for_update(),
                 pk=validated_data["student"].pk,
                 owner=course.owner,
             )

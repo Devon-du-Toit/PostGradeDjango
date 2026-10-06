@@ -90,7 +90,7 @@ class ActiveScopeMutationTests(TestCase):
             serializer.save()
         self.assertEqual(Enrollment.objects.count(), 1)
 
-    def test_assessment_metadata_is_editable_but_grading_and_withdrawal_are_absent(
+    def test_assessment_metadata_editing_rejects_grading_and_withdrawal_requires_version(
         self,
     ):
         client = APIClient()
@@ -109,6 +109,20 @@ class ActiveScopeMutationTests(TestCase):
             )
         enrollment = Enrollment.objects.create(course=self.course, student=self.student)
         self.assertEqual(
-            client.delete(f"/api/enrollments/{enrollment.pk}/").status_code, 404
+            client.delete(f"/api/enrollments/{enrollment.pk}/").status_code, 400
         )
         self.assertTrue(Enrollment.objects.filter(pk=enrollment.pk).exists())
+
+        self.assertEqual(
+            client.delete(
+                f"/api/enrollments/{enrollment.pk}/",
+                {
+                    "version": enrollment.version,
+                    "reason": "Lecturer withdrew class membership",
+                },
+                format="json",
+            ).status_code,
+            200,
+        )
+        enrollment.refresh_from_db()
+        self.assertIsNotNone(enrollment.withdrawn_at)

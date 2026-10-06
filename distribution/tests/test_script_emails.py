@@ -324,12 +324,24 @@ class ScriptEmailTests(ScriptFixture, TestCase):
         self.assertTrue(email.attachment.storage.exists(email.attachment.name))
         self.assertTrue(self.submission.file.storage.exists(self.submission.file.name))
 
-    def test_deleting_submission_does_not_make_old_email_deliverable(self):
+    def test_archiving_submission_retains_email_history_without_delivery(self):
         email = self.schedule()
-        self.client.delete(f"/api/submissions/{self.submission.pk}/")
+        response = self.client.delete(
+            f"/api/submissions/{self.submission.pk}/",
+            {
+                "version": self.submission.version,
+                "reason": "Retain as historical script",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 204)
         self.assertFalse(process_next_email())
         email.refresh_from_db()
-        self.assertIsNone(email.submission_id)
+        self.assertEqual(email.submission_id, self.submission.pk)
+        self.assertEqual(email.status, "superseded")
+        self.assertTrue(email.attachment.storage.exists(email.attachment.name))
+        self.submission.refresh_from_db()
+        self.assertIsNotNone(self.submission.archived_at)
 
     def test_removed_grading_routes_are_unavailable_and_assessment_has_no_scores(self):
         for url in [

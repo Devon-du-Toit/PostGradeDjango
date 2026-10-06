@@ -166,13 +166,14 @@ def ordered_pages(submission):
 
 
 def rebuild_script(submission, created_files):
-    from submissions.signals import delete_file_after_commit
+    from submissions.retention import retain_file_revision
 
-    old_storage, old_name = submission.file.storage, submission.file.name
+    retain_file_revision(submission)
     pages = ordered_pages(submission)
     if not pages:
+        submission.file = ""
         submission.qr_review_issues = group_issues(submission)
-        submission.save(update_fields=["qr_review_issues"])
+        submission.save(update_fields=["file", "qr_review_issues"])
         return
     with pymupdf.open() as document:
         for page in pages:
@@ -180,15 +181,17 @@ def rebuild_script(submission, created_files):
                 content = stored.read()
             with pymupdf.open(stream=content, filetype="pdf") as original:
                 document.insert_pdf(original)
-        submission.file.save("group.pdf", ContentFile(document.tobytes()), save=False)
+        submission.file.save(
+            "group-" + uuid.uuid4().hex + ".pdf",
+            ContentFile(document.tobytes()),
+            save=False,
+        )
         created_files.append((submission.file.storage, submission.file.name))
     submission.original_filename = "script.pdf"
     submission.qr_review_issues = group_issues(submission)
     submission.save(
         update_fields=["file", "original_filename", "qr_review_issues", "updated_at"]
     )
-    if old_name and old_name != submission.file.name:
-        delete_file_after_commit(old_storage, old_name, f"submission {submission.pk}")
 
 
 def create_qr_submissions(validated_data, actor):
@@ -211,7 +214,8 @@ def create_qr_submissions(validated_data, actor):
                 assessment=assessment, original_filename=uploaded.name
             )
             upload.file.save(
-                "source"
+                "source-"
+                + uuid.uuid4().hex
                 + (
                     ".pdf"
                     if uploaded.name.lower().endswith(".pdf")
@@ -242,9 +246,23 @@ def create_qr_submissions(validated_data, actor):
                 else:
                     key = "review:" + uuid.uuid4().hex
                 if key not in groups:
-                    submission = Submission.objects.filter(
-                        assessment=assessment, qr_group_key=key
-                    ).first()
+                    submission = (
+                        Submission.objects.active()
+                        .filter(assessment=assessment, qr_group_key=key)
+                        .first()
+                    )
+                    if (
+                        submission is None
+                        and Submission.objects.filter(
+                            assessment=assessment,
+                            qr_group_key=key,
+                            archived_at__isnull=True,
+                            superseded_at__isnull=True,
+                        ).exists()
+                    ):
+                        raise ValidationError(
+                            "Restore withdrawn class membership before adding pages to its retained QR group."
+                        )
                     if submission:
                         # Parent locks serialize all intake/verification; workers use job then submission.
                         list(
@@ -262,6 +280,9 @@ def create_qr_submissions(validated_data, actor):
                             raise ValidationError(
                                 "Existing group uses a different recognition method."
                             )
+                        from submissions.retention import retain_file_revision
+
+                        retain_file_revision(submission)
                         cancel_active_jobs(submission)
                         supersede_submission_emails(submission)
                         submission.record_status_change(
@@ -307,7 +328,11 @@ def create_qr_submissions(validated_data, actor):
                     qr_status=qr_status,
                     page_label=fields.get("page_label", ""),
                 )
-                page.file.save("page.pdf", ContentFile(content), save=False)
+                page.file.save(
+                    "page-" + uuid.uuid4().hex + ".pdf",
+                    ContentFile(content),
+                    save=False,
+                )
                 stored_files.append((page.file.storage, page.file.name))
                 page.save()
             for submission in groups.values():
@@ -469,7 +494,9 @@ def review_page(submission_id, page_id, payload, actor):
             if "reviewed_enrollment" in payload:
                 page.suggested_enrollment = (
                     get_object_or_404(
-                        Enrollment.objects.filter(course=source.assessment.course),
+                        Enrollment.objects.active().filter(
+                            course=source.assessment.course
+                        ),
                         pk=payload["reviewed_enrollment"],
                     )
                     if payload["reviewed_enrollment"] is not None
@@ -480,6 +507,9 @@ def review_page(submission_id, page_id, payload, actor):
             page.excluded = payload.get("exclude", page.excluded)
             page.save()
             for item in locked.values():
+                from submissions.retention import retain_file_revision
+
+                retain_file_revision(item)
                 cancel_active_jobs(item)
                 supersede_submission_emails(item)
                 item.record_status_change(
