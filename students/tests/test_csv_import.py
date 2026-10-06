@@ -6,8 +6,8 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from courses.models import Course
+from students.csv_import import CSVStudentSerializer
 from students.models import Enrollment, Student
-from students.serializers import StudentSerializer
 
 User = get_user_model()
 
@@ -60,14 +60,14 @@ class CSVImportTests(APITestCase):
             email="ann@x.com",
         )
         calls = []
-        real_validator = StudentSerializer.validate_student_number
+        real_validator = CSVStudentSerializer.validate_student_number
 
         def validate_student_number(serializer, value):
             calls.append((serializer.context["request"].user.pk, serializer.instance))
             return real_validator(serializer, value)
 
         with patch.object(
-            StudentSerializer,
+            CSVStudentSerializer,
             "validate_student_number",
             validate_student_number,
         ):
@@ -301,16 +301,13 @@ class CSVImportTests(APITestCase):
         self.assertEqual(Student.objects.count(), 0)
 
     def test_failure_during_apply_rolls_back_everything(self):
-        calls = {"n": 0}
-        real = Enrollment.objects.get_or_create
+        real = Enrollment.objects.bulk_create
 
         def flaky(*args, **kwargs):
-            calls["n"] += 1
-            if calls["n"] == 2:
-                raise RuntimeError("boom")
-            return real(*args, **kwargs)
+            real(*args, **kwargs)
+            raise RuntimeError("boom")
 
-        with patch.object(Enrollment.objects, "get_or_create", side_effect=flaky):
+        with patch.object(Enrollment.objects, "bulk_create", side_effect=flaky):
             with self.assertRaises(RuntimeError):
                 self.upload(HEADER + "001,Ann,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n")
         self.assertEqual(Student.objects.count(), 0)
