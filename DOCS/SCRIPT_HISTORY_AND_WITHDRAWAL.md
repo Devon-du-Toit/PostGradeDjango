@@ -112,3 +112,7 @@ restore, key reuse, CSV non-restoration, claimed recognition/delivery, late QR
 pages, excluded-page retention, global membership-scope growth and populated
 legacy migration. Production/staging deployment and recovery validation remain
 outside this change, as requested.
+
+A changed student email also invalidates an unsent snapshot at claim/send checks. Explicitly scheduling again creates a new immutable recipient snapshot; the idempotency key includes a SHA-256 digest of the destination (never the plaintext address), so repeat clicks remain idempotent for the current recipient without reviving the old queue. All lifecycle action bodies must be JSON objects with an integer version and a nonempty reason of at most 2000 characters.
+
+QR assembly also preserves the existing 15 MiB script resource budget via MAX_QR_GROUP_BYTES (default 15728640). Both the sum of included original single-page files and the encoded canonical PDF must fit it. The sum check bounds assembly memory before documents are loaded; shared-resource PDFs can therefore hit this conservative page-file budget before their compact source reaches it. Oversized whole intake returns 413 and rolls back all new rows/blobs, keeping earlier script versions, pages and queued state unchanged. The canonical PDF is encoded once.

@@ -76,15 +76,10 @@ class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         from rest_framework.exceptions import ValidationError as APIValidationError
 
+        from students.serializers import lifecycle_action
         from submissions.retention import archive_submission
 
-        version, reason = self.request.data.get("version"), self.request.data.get(
-            "reason", ""
-        )
-        if type(version) is not int or not isinstance(reason, str):
-            raise APIValidationError(
-                "Archive requires an integer version and a reason."
-            )
+        version, reason = lifecycle_action(self.request.data)
         try:
             archive_submission(instance, self.request.user, version, reason)
         except ValidationError as exc:

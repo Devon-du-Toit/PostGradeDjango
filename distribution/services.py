@@ -1,3 +1,4 @@
+from hashlib import sha256
 from pathlib import PurePath
 
 from django.conf import settings
@@ -34,6 +35,7 @@ def is_current(email):
             status=Submission.Status.VERIFIED,
             version=email.submission_version,
             enrollment_id=email.enrollment_id,
+            enrollment__student__email=email.recipient,
         )
         .exists()
         and email.enrollment_id is not None
@@ -50,7 +52,9 @@ def supersede_submission_emails(submission):
     )
 
 
-def schedule_script_email(submission):
+def schedule_script_email(
+    submission, *, expected_version=None, expected_enrollment_id=None
+):
     attachment = None
     try:
         with transaction.atomic():
@@ -66,6 +70,11 @@ def schedule_script_email(submission):
                 .select_for_update(of=("self",))
                 .get(pk=submission.pk)
             )
+            if expected_version is not None and (
+                submission.version != expected_version
+                or submission.enrollment_id != expected_enrollment_id
+            ):
+                raise ValidationError("This email is for an outdated verified script.")
             if (
                 submission.status != Submission.Status.VERIFIED
                 or submission.enrollment_id is None
@@ -89,7 +98,9 @@ def schedule_script_email(submission):
                     raise ValidationError(
                         "Resolve QR page review before emailing the script."
                     )
-            key = f"submission-{submission.pk}-v{submission.version}"
+            recipient = submission.enrollment.student.email
+            contact_key = sha256(recipient.encode("utf-8")).hexdigest()
+            key = f"submission-{submission.pk}-v{submission.version}-to-{contact_key}"
             existing = ScriptEmail.objects.filter(idempotency_key=key).first()
             if existing is not None:
                 return existing
@@ -193,6 +204,30 @@ def approve_assessment_emails(assessment, user):
 
 
 def retry_email(email_id, confirm_duplicate=False):
+    # A corrected destination creates a fresh immutable snapshot. Acquire parent
+    # locks through scheduling before its email-row lock, avoiding the reverse
+    # order used by archive/withdrawal to supersede unsent messages.
+    previous = ScriptEmail.objects.select_related(
+        "enrollment__student", "submission"
+    ).get(pk=email_id)
+    if (
+        previous.enrollment_id
+        and previous.recipient != previous.enrollment.student.email
+    ):
+        if previous.status != ScriptEmail.Status.FAILED:
+            raise ValidationError("Only failed emails can be retried.")
+        if (
+            previous.failure_reason == ScriptEmail.FailureReason.DELIVERY_UNKNOWN
+            and not confirm_duplicate
+        ):
+            raise ValidationError(
+                "This email may already have been delivered. Retry with confirm_duplicate to send it again."
+            )
+        return schedule_script_email(
+            previous.submission,
+            expected_version=previous.submission_version,
+            expected_enrollment_id=previous.enrollment_id,
+        )
     with transaction.atomic():
         email = (
             ScriptEmail.objects.select_for_update(of=("self",))

@@ -162,3 +162,21 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 class CSVImportOptionsSerializer(serializers.Serializer):
     dry_run = serializers.BooleanField(default=False)
     update_existing = serializers.BooleanField(default=False)
+
+
+class LifecycleActionSerializer(serializers.Serializer):
+    version = serializers.IntegerField(min_value=0)
+    reason = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+    def validate_version(self, value):
+        if type(self.initial_data.get("version")) is not int:
+            raise serializers.ValidationError(
+                "Use the integer version returned by the API."
+            )
+        return value
+
+
+def lifecycle_action(data):
+    serializer = LifecycleActionSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+    return serializer.validated_data["version"], serializer.validated_data["reason"]
