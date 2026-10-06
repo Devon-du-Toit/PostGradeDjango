@@ -1,6 +1,7 @@
 from django.urls import path
 
 from submissions.views import (
+    RecognitionMethodsView,
     SubmissionDetailView,
     SubmissionFileDownloadView,
     SubmissionListCreateView,
@@ -13,6 +14,7 @@ from submissions.views import (
 
 
 urlpatterns = [
+    path("recognition-methods/", RecognitionMethodsView.as_view(), name="recognition-methods"),
     path(
         "",
         SubmissionListCreateView.as_view(),

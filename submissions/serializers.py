@@ -30,6 +30,8 @@ class RecognitionAttemptSerializer(serializers.ModelSerializer):
             "method",
             "outcome",
             "processing_version",
+            "template_version",
+            "column_scores",
             "raw_text",
             "raw_candidate",
             "raw_candidates",
@@ -102,6 +104,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "assessment",
+            "recognition_method",
             "enrollment",
             "file",
             "download_url",
@@ -297,6 +300,12 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return enrollment
 
     def validate(self, attrs):
+        if (self.instance is not None and "recognition_method" in attrs
+                and attrs["recognition_method"] != self.instance.recognition_method
+                and "file" not in attrs):
+            raise serializers.ValidationError({
+                "recognition_method": "Replace the file to change its recognition method. Retries preserve the selected method.",
+            })
         enrollment = attrs.get(
             "enrollment",
             getattr(self.instance, "enrollment", None),

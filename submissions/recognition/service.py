@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from django.core.files.base import ContentFile
+from django.conf import settings
 from submissions.models import RecognitionAttempt
 from submissions.recognition.document import (
     crop_image,
@@ -71,10 +72,13 @@ def _local_file_path(field_file):
 
 
 def recognize_submission(submission):
+    method = submission.recognition_method
+    if method not in ("ocr", "bubble"):
+        raise ValueError("Unsupported recognition method")
     attempt = RecognitionAttempt(
         submission=submission,
-        method=RecognitionAttempt.Method.OCR,
-        processing_version=PROCESSING_VERSION,
+        method=method,
+        processing_version="bubble-1" if method == "bubble" else PROCESSING_VERSION,
     )
 
     try:
@@ -105,6 +109,8 @@ def save_region_image(attempt, image_path, box):
         )
 
 def run_recognition(submission, attempt):
+    if submission.recognition_method == "bubble":
+        return run_bubble_recognition(submission, attempt)
     # Determine which student this uploaded script belongs to.
     with (
         _local_file_path(submission.file) as local_path,
@@ -204,3 +210,42 @@ def run_recognition(submission, attempt):
         enrollment=enrollment,
         reason=None,
     )
+
+
+def run_bubble_recognition(submission, attempt):
+    # Lazy worker-only import. Selecting bubbles never invokes PaddleOCR,
+    # text localization or fuzzy number matching.
+    from submissions.recognition.bubbles import read_bubbles
+
+    with (_local_file_path(submission.file) as local_path,
+          recognition_image(local_path) as image_path):
+        reading = read_bubbles(image_path)
+    if reading.region is None:
+        attempt.outcome = RecognitionAttempt.Outcome.REGION_NOT_FOUND
+        attempt.quality_issues = [reading.reason]
+        return RecognitionResult(enrollment=None, reason=reading.reason)
+    attempt.region = reading.region
+    attempt.template_version = reading.template
+    attempt.column_scores = reading.columns
+    attempt.column_ambiguity = reading.ambiguity
+    attempt.raw_candidate = reading.candidate
+    attempt.confidence = reading.confidence
+    attempt.confidence_type = RecognitionAttempt.ConfidenceType.BUBBLE_MARGIN
+    attempt.region_image.save(
+        f"submission_{submission.pk}_bubble.png", ContentFile(reading.image), save=False,
+    )
+    if reading.ambiguity:
+        attempt.outcome = RecognitionAttempt.Outcome.NO_CANDIDATE
+        return RecognitionResult(enrollment=None, reason=reading.reason)
+    attempt.raw_candidates = [{"value": reading.candidate, "confidence": reading.confidence}]
+    # Exact equality only; no OCR, nearest-number lookup or fuzzy matching.
+    enrollment = submission.assessment.course.enrollments.select_related("student").filter(
+        student__student_number=reading.candidate,
+    ).first()
+    if enrollment is None or not getattr(settings, "BUBBLE_AUTO_MATCH_ENABLED", True):
+        attempt.outcome = RecognitionAttempt.Outcome.NO_MATCH
+        return RecognitionResult(enrollment=None, reason=REASON_NOT_MATCHED)
+    attempt.outcome = RecognitionAttempt.Outcome.MATCHED
+    attempt.suggested_enrollment = enrollment
+    attempt.suggested_student_number = reading.candidate
+    return RecognitionResult(enrollment=enrollment, reason=None)

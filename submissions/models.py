@@ -18,6 +18,14 @@ class SubmissionQuerySet(models.QuerySet):
 
 class Submission(models.Model):
     objects = SubmissionQuerySet.as_manager()
+    class RecognitionMethod(models.TextChoices):
+        OCR = "ocr", "Handwritten digits (OCR)"
+        BUBBLE = "bubble", "Filled bubbles"
+
+    recognition_method = models.CharField(
+        max_length=20, choices=RecognitionMethod.choices,
+        default=RecognitionMethod.OCR,
+    )
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         MATCHED = "matched", "Matched"
@@ -259,6 +267,9 @@ class RecognitionAttempt(models.Model):
     processing_version = models.CharField(
         max_length=50,
     )
+
+    template_version = models.CharField(max_length=50, blank=True)
+    column_scores = models.JSONField(default=list, blank=True)
 
     raw_text = models.TextField(
         blank=True,
