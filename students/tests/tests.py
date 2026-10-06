@@ -758,3 +758,48 @@ class StudentAPITests(TestCase):
             ).count(),
             1,
         )
+
+    def _create_student(self, **overrides):
+        payload = {
+            "student_number": "12345678",
+            "first_name": "Jane",
+            "last_name": "Smith",
+            "email": "jane.smith@example.com",
+            **overrides,
+        }
+        return self.client.post("/api/students/", payload, format="json")
+
+    def test_duplicate_student_number_returns_400_not_500(self):
+        self._create_student()
+
+        response = self._create_student(first_name="Janet")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("student_number", response.data)
+        self.assertEqual(
+            Student.objects.filter(student_number="12345678").count(),
+            1,
+        )
+
+    def test_other_lecturer_can_use_the_same_student_number(self):
+        self._create_student()
+        other = get_user_model().objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=other)
+
+        response = self._create_student()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_update_student_keeping_own_number_is_allowed(self):
+        student = self._create_student().data
+
+        response = self.client.patch(
+            f"/api/students/{student['id']}/",
+            {"first_name": "Janet"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
