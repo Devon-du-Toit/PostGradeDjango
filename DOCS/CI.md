@@ -1,6 +1,6 @@
 # CI Pipeline
 
-The CI pipeline is defined in .github/workflows/ci.yml. It runs on every push and PR.
+The CI pipeline is defined in .github/workflows/ci.yml. It runs on pushes/PRs targeting main or master; a PR targeting a stacked feature branch may have no CI run.
 
 ## Jobs
 
@@ -9,6 +9,7 @@ The CI pipeline is defined in .github/workflows/ci.yml. It runs on every push an
 Runs first. Mocks OCR / OpenCV / PaddleOCR.
 
 Tests:
+- submissions.tests.test_audit
 - submissions.tests.test_emailing
 - submissions.tests.test_submissions
 - submissions.tests.test_verification
@@ -33,3 +34,11 @@ PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True skips the connectivity check on every
 - If you change a model, run python manage.py makemigrations and commit the file.
 - New tests that mock OCR go in the unit job.
 - New tests that use real image processing go in the integration job.
+
+## Release cleanup integration
+
+#37 adds a Ruff lint job once its stacked code reaches master. It installs
+`requirements-dev.txt` and runs `ruff check .` as an enforced check;
+`ruff format --check .` remains non-blocking until the separate format pass.
+Retarget/update stacked implementation PRs before relying on master checks.
+See [release integration status](API_REFERENCE.md#14-release-integration-status).

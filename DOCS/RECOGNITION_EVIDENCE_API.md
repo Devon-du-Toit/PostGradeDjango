@@ -2,12 +2,13 @@
 
 PostGrade — Group 13
 
-Version 0.2.1
+Version 0.3.0
 
 ## Revision History
 
 | Date | Version | Description | Author |
 |---|---|---|---|
+| 06/10/2026 | 0.3.0 | Protected originals, pagination, version handling and release archive/queue contract; see API reference integration prerequisites. | PostGrade maintainers |
 | 24/09/2026 | 0.1.0 | Initial recognition evidence and review API documentation (Issue #2). | Graham Robert |
 | 27/09/2026 | 0.1.1 | Review changes: `raw_candidates`, `error_type`, `image_unusable` outcome, image-quality reasons, region image cleanup. | Graham Robert |
 | 24/09/2026 | 0.2.0 | Background recognition: `processing` and `recognition_failed` states, `recognition_job` object, retry endpoint, file replacement (Issue #5). | Graham Robert |
@@ -51,7 +52,9 @@ In scope:
 Out of scope:
 
 - Implementation of bubble recognition (Technical Specification, System Feature 6).
-- Image-quality checking (Technical Specification, System Feature 5). The `quality_issues` field is defined but not yet populated.
+- Additional image-quality checks for orientation and cropped/missing
+  sections (Technical Specification, System Feature 5). Existing checks
+  already populate `quality_issues`.
 - Email distribution endpoints.
 
 ### 1.3 Requirement Traceability
@@ -82,6 +85,10 @@ Out of scope:
 | `DOCS/RECOGNITION_WORKER.md` | Recognition worker design, local setup and reliability behaviour. |
 
 ---
+
+Release integration note: [API_REFERENCE.md §14](API_REFERENCE.md#14-release-integration-status)
+identifies the remaining failed-recognition queue prerequisite. Archive enforcement, protected
+downloads, pagination and file validation are already implemented.
 
 ## 2. Conventions
 
@@ -287,7 +294,7 @@ Submission responses include the most recent background recognition job as `reco
 | `running` | A worker is processing it. |
 | `succeeded` | Recognition completed. The submission status reflects the outcome. |
 | `failed` | Every attempt raised an error. The submission is `recognition_failed`. |
-| `cancelled` | Superseded by a file replacement. Its result, if any, was discarded. |
+| `cancelled` | Superseded by replacement, or cancelled by the release archive policy. Its result cannot change the submission. |
 
 `failure_reason` deliberately contains the error type only. The full error text may include server file paths and is kept in the server log and database for administrators.
 
@@ -337,7 +344,6 @@ Uploads a marked script for an assessment and queues it for background recogniti
   "id": 1,
   "assessment": 1,
   "enrollment": null,
-  "file": "http://127.0.0.1:8000/media/submissions/2026/09/24/script.pdf",
   "original_filename": "script.pdf",
   "status": "processing",
   "recognition": null,
@@ -353,7 +359,9 @@ Uploads a marked script for an assessment and queues it for background recogniti
     "finished_at": null
   },
   "created_at": "2026-09-24T19:57:59.554029Z",
-  "updated_at": "2026-09-24T19:57:59.554029Z"
+  "updated_at": "2026-09-24T19:57:59.554029Z",
+  "download_url": "http://127.0.0.1:8000/api/submissions/1/file/",
+  "version": 0
 }
 ```
 
@@ -364,7 +372,6 @@ Uploads a marked script for an assessment and queues it for background recogniti
   "id": 1,
   "assessment": 1,
   "enrollment": 1,
-  "file": "http://127.0.0.1:8000/media/submissions/2026/09/24/script.jpeg",
   "original_filename": "script.jpeg",
   "status": "matched",
   "recognition": {
@@ -404,7 +411,9 @@ Uploads a marked script for an assessment and queues it for background recogniti
     "finished_at": "2026-09-24T20:00:37.345472Z"
   },
   "created_at": "2026-09-24T20:00:37.247626Z",
-  "updated_at": "2026-09-24T20:00:37.345472Z"
+  "updated_at": "2026-09-24T20:00:37.345472Z",
+  "download_url": "http://127.0.0.1:8000/api/submissions/1/file/",
+  "version": 0
 }
 ```
 
@@ -414,7 +423,7 @@ Uploads a marked script for an assessment and queues it for background recogniti
 |---|---|---|
 | `GET` | `/api/submissions/` | All of the lecturer's submissions. |
 | `GET` | `/api/submissions/{id}/` | One submission. |
-| `GET` | `/api/submissions/verification-queue/` | Submissions with status `matched` or `needs_verification`, oldest first. |
+| `GET` | `/api/submissions/verification-queue/` | Release queue: `matched`, `needs_verification` or `recognition_failed`, oldest first; #41 integration required. |
 
 **Purpose/Description**
 
@@ -424,11 +433,12 @@ Returns submissions with their latest recognition evidence and recognition job f
 
 | Status | Description |
 |---|---|
-| `200 OK` | A submission object, or an array of submission objects, each with its `recognition` and `recognition_job` objects. |
+| `200 OK` | Detail returns a submission object; lists return `{count, next, previous, results}`. Each item includes `recognition`, `recognition_job`, `download_url` and `version`. |
 | `401 Unauthorized` | Missing or invalid token. |
 | `404 Not Found` | (`{id}` only) The submission does not exist or belongs to another lecturer. |
 
-List endpoints are not paginated.
+List endpoints are paginated (25 by default, at most 100 per page).
+See [API_CONTRACT.md](API_CONTRACT.md) for filters and page errors.
 
 ### 6.3 Retrieve Region Image
 
@@ -482,7 +492,7 @@ Confirms or corrects the student associated with a submission (Functional Specif
 **Processing**
 
 1. The enrollment must belong to the lecturer and to the submission's course.
-2. A `marked` submission cannot be re-verified.
+2. A `marked` or legacy `uploaded` submission cannot be verified; the locked database status determines whether the transition is legal.
 3. `enrollment` is set and `status` becomes `verified`.
 4. The recognition evidence is **not** modified. `recognition.suggested_enrollment` continues to show what recognition originally suggested.
 
@@ -536,7 +546,6 @@ No request body.
   "id": 1,
   "assessment": 1,
   "enrollment": null,
-  "file": "http://127.0.0.1:8000/media/submissions/2026/09/24/script.pdf",
   "original_filename": "script.pdf",
   "status": "processing",
   "recognition": null,
@@ -552,7 +561,9 @@ No request body.
     "finished_at": null
   },
   "created_at": "2026-09-24T19:57:59.554029Z",
-  "updated_at": "2026-09-24T19:57:59.623961Z"
+  "updated_at": "2026-09-24T19:57:59.623961Z",
+  "download_url": "http://127.0.0.1:8000/api/submissions/1/file/",
+  "version": 0
 }
 ```
 
@@ -578,7 +589,7 @@ Replaces a submission's file, for example with a clearer scan. Existing endpoint
 2. Any queued or running job for the old file is `cancelled`; a running job's result is discarded when it finishes.
 3. The enrollment is cleared, including a previously verified one, because the new file may belong to a different student. An `enrollment` sent in the same request is ignored.
 4. The status becomes `processing` and a new job is queued for the new file.
-5. The old file is kept in storage.
+5. The old original is deleted only after the replacement transaction commits.
 
 A `PATCH` without `file` updates the given fields but **does not change the status** (status changes go through the workflow endpoints). Changing `enrollment` this way is rejected while the submission is `processing`, because the running recognition job would otherwise overwrite it; use `POST /api/submissions/{id}/verify/` instead.
 
@@ -592,6 +603,28 @@ A `PATCH` without `file` updates the given fields but **does not change the stat
 | `404 Not Found` | The submission does not exist or belongs to another lecturer. |
 
 ---
+
+### 6.7 Download or delete an original
+
+`GET /api/submissions/{id}/file/` requires an owner JWT and returns the
+original file as an attachment. A missing stored file or inaccessible
+submission returns 404. Clients fetch with their token and use a blob for
+preview; raw `/media/` URLs are not returned. Region crops use the separate
+authenticated recognition-image endpoint.
+
+Upload/replacement validates actual PDF/JPG/JPEG/PNG bytes, a 15 MB limit,
+at most 20 PDF pages and decoded dimensions at most 6000px. Recognition
+reads page 1. A marked file cannot be replaced; an unmarked replacement
+cancels old jobs and removes the old original after commit. DELETE removes
+the original and recognition crops after commit and retains the separate
+Result, while the current submission-bound audit relationship cascades.
+There is no timed retention purge.
+
+Generic PATCH requires `version`; replacement's version/audit handling and
+marked identity edits still have the #6 acceptance gaps. Do not describe
+this as a complete optimistic-concurrency contract. Archive rules from #39
+block these paths and cancel queued work without deleting files; see
+[ARCHIVING.md](ARCHIVING.md).
 
 ## 7. Error Responses
 
@@ -668,22 +701,24 @@ See the example in Section 6.1.
 `status` is `needs_verification`; no region or image is stored.
 
 ```json
-"recognition": {
-  "id": 2,
-  "method": "ocr",
-  "outcome": "region_not_found",
-  "processing_version": "ocr-1",
-  "raw_text": "",
-  "raw_candidate": "",
-  "suggested_enrollment": null,
-  "suggested_student_number": "",
-  "confidence": null,
-  "confidence_type": "none",
-  "column_ambiguity": [],
-  "region": null,
-  "region_image_url": null,
-  "quality_issues": [],
-  "created_at": "2026-09-24T12:23:49.097201Z"
+{
+  "recognition": {
+    "id": 2,
+    "method": "ocr",
+    "outcome": "region_not_found",
+    "processing_version": "ocr-1",
+    "raw_text": "",
+    "raw_candidate": "",
+    "suggested_enrollment": null,
+    "suggested_student_number": "",
+    "confidence": null,
+    "confidence_type": "none",
+    "column_ambiguity": [],
+    "region": null,
+    "region_image_url": null,
+    "quality_issues": [],
+    "created_at": "2026-09-24T12:23:49.097201Z"
+  }
 }
 ```
 
@@ -692,7 +727,9 @@ See the example in Section 6.1.
 The job is retried; after the final attempt `status` is `recognition_failed`. The fields match 8.2 except:
 
 ```json
-"outcome": "error"
+{
+  "outcome": "error"
+}
 ```
 
 ### 8.4 Evidence After Lecturer Correction
@@ -719,32 +756,37 @@ After `POST /api/submissions/2/verify/` with `{"enrollment": 1}`, the submission
 Bubble recognition is not yet implemented. The following shows the evidence format a bubble implementation must produce. Column 4 has two filled bubbles, so position 4 of `raw_candidate` is `X` and the submission requires manual review.
 
 ```json
-"recognition": {
-  "id": 7,
-  "method": "bubble",
-  "outcome": "no_match",
-  "processing_version": "bubble-1",
-  "raw_text": "",
-  "raw_candidate": "3727X432",
-  "suggested_enrollment": null,
-  "suggested_student_number": "",
-  "confidence": 0.41,
-  "confidence_type": "bubble_margin",
-  "column_ambiguity": [
-    { "column": 4, "reason": "multiple" }
-  ],
-  "region": {
-    "page": 0,
-    "x": 212,
-    "y": 340,
-    "width": 640,
-    "height": 800,
-    "image_width": 2480,
-    "image_height": 3508
-  },
-  "region_image_url": "/api/submissions/7/recognition-image/",
-  "quality_issues": [],
-  "created_at": "2026-10-01T09:15:02.000000Z"
+{
+  "recognition": {
+    "id": 7,
+    "method": "bubble",
+    "outcome": "no_match",
+    "processing_version": "bubble-1",
+    "raw_text": "",
+    "raw_candidate": "3727X432",
+    "suggested_enrollment": null,
+    "suggested_student_number": "",
+    "confidence": 0.41,
+    "confidence_type": "bubble_margin",
+    "column_ambiguity": [
+      {
+        "column": 4,
+        "reason": "multiple"
+      }
+    ],
+    "region": {
+      "page": 0,
+      "x": 212,
+      "y": 340,
+      "width": 640,
+      "height": 800,
+      "image_width": 2480,
+      "image_height": 3508
+    },
+    "region_image_url": "/api/submissions/7/recognition-image/",
+    "quality_issues": [],
+    "created_at": "2026-10-01T09:15:02.000000Z"
+  }
 }
 ```
 
@@ -753,30 +795,34 @@ Bubble recognition is not yet implemented. The following shows the evidence form
 All columns were read, but the image is blurred and the confidence is below the review threshold.
 
 ```json
-"recognition": {
-  "id": 8,
-  "method": "bubble",
-  "outcome": "no_match",
-  "processing_version": "bubble-1",
-  "raw_text": "",
-  "raw_candidate": "37279432",
-  "suggested_enrollment": null,
-  "suggested_student_number": "",
-  "confidence": 0.62,
-  "confidence_type": "bubble_margin",
-  "column_ambiguity": [],
-  "region": {
-    "page": 0,
-    "x": 208,
-    "y": 336,
-    "width": 644,
-    "height": 804,
-    "image_width": 2480,
-    "image_height": 3508
-  },
-  "region_image_url": "/api/submissions/8/recognition-image/",
-  "quality_issues": ["blurry"],
-  "created_at": "2026-10-01T09:15:04.000000Z"
+{
+  "recognition": {
+    "id": 8,
+    "method": "bubble",
+    "outcome": "no_match",
+    "processing_version": "bubble-1",
+    "raw_text": "",
+    "raw_candidate": "37279432",
+    "suggested_enrollment": null,
+    "suggested_student_number": "",
+    "confidence": 0.62,
+    "confidence_type": "bubble_margin",
+    "column_ambiguity": [],
+    "region": {
+      "page": 0,
+      "x": 208,
+      "y": 336,
+      "width": 644,
+      "height": 804,
+      "image_width": 2480,
+      "image_height": 3508
+    },
+    "region_image_url": "/api/submissions/8/recognition-image/",
+    "quality_issues": [
+      "blurry"
+    ],
+    "created_at": "2026-10-01T09:15:04.000000Z"
+  }
 }
 ```
 
@@ -784,7 +830,7 @@ All columns were read, but the image is blurred and the confidence is below the 
 
 ## 9. Compatibility and Rollout
 
-- All changes are additive. No existing field, endpoint or status value was renamed or removed; existing clients continue to work unchanged.
+- Initial evidence additions were additive, but the current integrated API has breaking list/file/update changes: lists are paginated, `file` is write-only with `download_url` output, and generic updates require `version`. Coordinate client rollout with the API contract.
 - New submission field: `recognition`.
 - New endpoint: `GET /api/submissions/{id}/recognition-image/`.
 - Submissions uploaded before this release have `recognition: null`. Clients must handle this value.
@@ -814,10 +860,10 @@ All columns were read, but the image is blurred and the confidence is below the 
 | 03 | Duplicate-match detection across a batch (SF7-FR3) is not yet recorded in evidence. | TBD |
 | 04 | Bubble recognition must not auto-match a `raw_candidate` containing `X`: the current fuzzy matching tolerates one differing character and could otherwise match it. | TBD |
 | 05 | Minimum confidence threshold for automatic matching is undefined (Technical Specification Issue 04; SF6-FR10 proposes 85% for `bubble_margin`). | TBD |
-| 06 | The `file` URL returned on submissions points to `/media/`, which is not served. A protected full-script preview endpoint is required for the review workspace. | TBD |
+| 06 | Originals are now served by authenticated `/submissions/{id}/file/`; output is `download_url`. | Implemented (#22) |
 | 07 | Image-quality checking covers resolution, blur, exposure and contrast; orientation and cropped/missing sections (SF5-FR3/FR4) are not yet detected. `quality_issues` holds the check's human-readable reason rather than a stable code. | TBD |
 | 08 | `raw_candidate` duplicates the first entry of `raw_candidates`. Kept to avoid breaking the API before the review meeting; removal is a breaking change to agree with the frontend. | TBD |
-| 09 | Only region images are cleaned up on delete. Uploaded submission files themselves are not removed (retention belongs to Issue #4). | TBD |
+| 09 | Originals and region images are cleaned up after committed deletion; old originals after replacement. No timed purge. | Implemented (#22) |
 | 10 | If a file is replaced while the old file's job is running, that job's recognition attempt may be recorded after the new job's, and briefly appear as the latest `recognition` until the new job completes. Submission status and enrollment are not affected. Requires linking each attempt to its job. | TBD |
-| 11 | The Vue frontend does not yet display `processing` or `recognition_failed`, poll processing submissions, or offer the retry action. | TBD |
+| 11 | Vue has processing/failed states and polling. Review-panel/retry integration and safe interrupted-upload retry still need final cross-repository validation. | Integration follow-up |
 | 12 | Generic `PATCH /api/submissions/{id}/` can still change `enrollment` outside the verify workflow (for example on a `marked` submission). Only the `processing` case is blocked here; workflow enforcement belongs to Issue #6. | TBD |

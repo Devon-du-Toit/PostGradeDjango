@@ -1,7 +1,10 @@
 # PostGrade API Contract
 
-Branch: `issue-11-api-filtering-pagination`
-Last updated: 2026-09-30
+Release integration reference · updated 2026-10-06
+
+See [API_REFERENCE.md §14](API_REFERENCE.md#14-release-integration-status):
+the failed-recognition queue (#41) rules below require its
+code to be integrated into master. Pagination and archiving are already merged.
 
 ## Authentication and Ownership
 
@@ -41,7 +44,7 @@ Example:
 | `GET /api/enrollments/` and `GET /api/students/enrollments/` | Enrollments for owned course/student; optional `course`, `student` | Student number, first name, last name | Course ID, student number, `id` |
 | `GET /api/assessments/{assessment_id}/results/` | Results for an assessment in an owned course | Student number, first name, last name | Student number, `id` |
 | `GET /api/submissions/` | Owned submissions; optional `course`, `assessment`, `status` | Filename, student number, first name, last name | `-created_at`, `-id` |
-| `GET /api/submissions/verification-queue/` | Owned submissions whose status is `needs_verification` or `matched`; optional `course`, `assessment`, `status` | Filename, student number, first name, last name | `created_at`, `id` |
+| `GET /api/submissions/verification-queue/` | Owned submissions whose status is `needs_verification`, `matched` or `recognition_failed`; optional `course`, `assessment`, `status` | Filename, student number, first name, last name | `created_at`, `id` |
 | `GET /api/dashboard/assessments/` | Assessments in owned courses; optional owned `course` | Assessment name, course code, course name | Assessment date descending (undated last), `-id` |
 
 These endpoints do not expose a client-selectable `ordering` parameter. Ordering is chosen by the server and includes a unique tie-breaker for stable pagination.
@@ -52,13 +55,13 @@ These endpoints do not expose a client-selectable `ordering` parameter. Ordering
 
 Search is case-insensitive and matches any configured search field. The submission list and verification queue search original filename, student number, first name, and last name. A filename search can therefore find a submission that has not been matched to a student.
 
-The verification queue is restricted to `needs_verification` and `matched`; other status values are invalid for that endpoint.
+The release verification queue is restricted to `needs_verification`, `matched` and `recognition_failed`; other status values are invalid for that endpoint. Until the #41 stack reaches master, that branch still has only the first two queue statuses.
 
 ## Submission Status Values
 
 `uploaded`, `processing`, `matched`, `needs_verification`, `recognition_failed`, `verified`, `marked`
 
-`pending_verifications` counts submissions with status `needs_verification` or `matched`. It does not include `processing`, `recognition_failed`, `verified`, or `marked` submissions.
+`pending_verifications` uses the same release queue statuses: `needs_verification`, `matched` and `recognition_failed`. It excludes `processing`, `verified` and `marked`. All counts and normal lists also exclude archived courses/assessments. Archived IDs are invalid choices for course/assessment filters; detail/action routes return 404. See [ARCHIVING.md](ARCHIVING.md).
 
 ## Dashboard Responses
 
@@ -66,7 +69,7 @@ The verification queue is restricted to `needs_verification` and `matched`; othe
 
 Returns counts scoped to the authenticated user:
 
-- `active_courses`: courses whose year is the current local calendar year.
+- `active_courses`: unarchived courses whose year is the current Django local calendar year (the current TIME_ZONE is UTC).
 - `pending_verifications`: submissions in the verification-queue statuses.
 - `submissions_by_status`: count for every submission status, including zero-count statuses.
 
@@ -78,7 +81,7 @@ Returns a paginated list of the user's assessments. Each result includes `id`, `
 
 Date fields use ISO `YYYY-MM-DD` format, or `null` when optional. Datetime fields such as `created_at` and `updated_at` are ISO 8601 timestamps with UTC offset information.
 
-Assessment `max_mark`, assessment `weight`, and result `mark` are decimal values with two fractional digits. Result marks use `DecimalField(max_digits=8, decimal_places=2)` and are serialized as decimal strings, for example `"85.50"`. Marks must be non-negative and cannot exceed the assessment maximum; invalid marks return `400`.
+Assessment `max_mark`, assessment `weight`, and result `mark` are decimal values with two fractional digits. Result marks use `DecimalField(max_digits=8, decimal_places=2)` and are serialized as decimal strings, for example `"85.50"`. Calculated percentages and custom gradebook/statistics response values are JSON numbers; format display precision in the client. Marks must be non-negative and cannot exceed the assessment maximum; invalid marks return `400`.
 
 ## Errors
 
