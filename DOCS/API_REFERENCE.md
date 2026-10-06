@@ -22,11 +22,13 @@ Normal data endpoints are owner-scoped. Another owner's detail/action returns 40
 | GET POST | `courses/` | Owned active courses; code, name, year, semester |
 | GET PUT PATCH DELETE | `courses/{id}/` | Read/edit; DELETE archives |
 | GET | `courses/{id}/students/` | Active course class list |
-| POST | `courses/{id}/import-students/` | Multipart CSV file, update_existing, optional dry_run |
+| POST | `courses/{id}/import-students/` | Multipart CSV file, validated update_existing/dry_run booleans; 409 if the plan becomes stale |
 | GET POST | `students/` | Owned contacts |
 | GET PUT PATCH DELETE | `students/{id}/` | Owned contact; DELETE is physical deletion |
 | POST | `students/{id}/email/` | Direct subject/message text email, separate from script delivery |
 | GET POST | `enrollments/` | Owned active course enrollments; course, student |
+
+CSV previews and updates are defined in [CSV_IMPORT_AND_LIFECYCLE.md](CSV_IMPORT_AND_LIFECYCLE.md). Imports are additive and atomic; malformed records return physical starting line numbers, and no student details change without update_existing=true.
 
 CSV columns: `student_number,first_name,last_name,email`. Student numbers are strings; retain leading zeros. Defaults: UTF-8 with optional BOM, 2 MB, 5000 rows. Validation precedes atomic application. `dry_run=true` writes nothing; `update_existing=true` explicitly updates stored contact details. Enrollment list records include read-only student_number, first_name and last_name, so verification does not need a gradebook. There is no enrollment withdrawal/delete endpoint.
 

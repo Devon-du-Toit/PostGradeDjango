@@ -16,3 +16,6 @@ The active domain no longer stores assessment scores or Result rows. The grading
 Direct ORM writes do not automatically run full_clean. Owner/course membership must still be respected outside the API. User/contact/enrollment deletion cascade choices, long-term audit retention, enrollment withdrawal, archive restore/key reuse and duplicate-script policy remain separate decisions. Submission deletion nulls email history's subject link; that history is not deliverable.
 
 Storage is not transactional with PostgreSQL. Snapshot creation cleans up on local scheduling failure; database/media backup consistency and orphan-storage reconciliation remain operational concerns. In-progress SMTP delivery cannot be recalled. Use the backup/restore runbook and a representative staging test.
+
+
+Issue #9 records the current [class-list and assessment lifecycle decisions](CSV_IMPORT_AND_LIFECYCLE.md). Follow up here on enrollment withdrawal, restricting global contact deletion when verified scripts exist, immutable audit identity after deletion and recognition fencing against deleted enrollment records. Bulk import query optimization remains issue #42.

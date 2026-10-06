@@ -15,7 +15,8 @@ import io
 from dataclasses import dataclass, field
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from students.models import Enrollment, Student
 from students.serializers import StudentSerializer
@@ -44,8 +45,10 @@ TRACKED_FIELDS = ("first_name", "last_name", "email")
 class CSVFileError(Exception):
     """A problem with the file itself, not any particular row."""
 
-    def __init__(self, detail):
+    def __init__(self, detail, status_code=400, errors=None):
         self.detail = detail
+        self.status_code = status_code
+        self.errors = errors or []
         super().__init__(detail)
 
 
@@ -76,6 +79,8 @@ def _error_entry(row_number, errors, student_number=""):
 
 @dataclass
 class ImportPlan:
+    owner_id: int | None = None
+    expected_students: dict = field(default_factory=dict)
     rows_processed: int = 0
     to_create: list = field(default_factory=list)
     to_update: list = field(default_factory=list)
@@ -117,36 +122,37 @@ def _read_decoded_text(uploaded_file):
     if uploaded_file.size > MAX_FILE_SIZE_BYTES:
         max_mb = MAX_FILE_SIZE_BYTES / (1024 * 1024)
         raise CSVFileError(
-            f"File is too large. Maximum allowed size is "
-            f"{max_mb:.1f} MB."
+            f"File is too large. Maximum allowed size is " f"{max_mb:.1f} MB."
         )
 
-    raw_bytes = uploaded_file.read()
+    raw_bytes = uploaded_file.read(MAX_FILE_SIZE_BYTES + 1)
+    if len(raw_bytes) > MAX_FILE_SIZE_BYTES:
+        raise CSVFileError("File exceeds the maximum allowed size.")
 
     try:
         # utf-8-sig transparently strips a BOM if present, and
         # behaves exactly like plain utf-8 when there isn't one.
         return raw_bytes.decode("utf-8-sig")
     except UnicodeDecodeError:
-        raise CSVFileError(
-            "File could not be read as UTF-8 text."
-        )
+        raise CSVFileError("File could not be read as UTF-8 text.")
 
 
 def _build_reader(decoded_text):
-    reader = csv.DictReader(io.StringIO(decoded_text))
-
-    missing_columns = set(REQUIRED_COLUMNS) - set(
-        reader.fieldnames or []
-    )
-
-    if missing_columns:
-        raise CSVFileError(
-            "Missing required columns: "
-            + ", ".join(sorted(missing_columns))
-        )
-
-    return reader
+    reader = csv.reader(io.StringIO(decoded_text, newline=""), strict=True)
+    try:
+        header = [name.strip() for name in next(reader)]
+    except StopIteration:
+        raise CSVFileError("The CSV file is empty.")
+    except csv.Error as exc:
+        raise CSVFileError(f"Invalid CSV header: {exc}") from exc
+    if any(not name for name in header):
+        raise CSVFileError("Header contains a blank column name.")
+    if len(header) != len(set(header)):
+        raise CSVFileError("Header contains duplicate column names.")
+    missing = set(REQUIRED_COLUMNS) - set(header)
+    if missing:
+        raise CSVFileError("Missing required columns: " + ", ".join(sorted(missing)))
+    return reader, header
 
 
 def _extract_fields(row):
@@ -156,10 +162,7 @@ def _extract_fields(row):
     from DictReader as None; that's normalized to "" here so every
     downstream check only has to deal with strings.
     """
-    return {
-        column: (row.get(column) or "").strip()
-        for column in REQUIRED_COLUMNS
-    }
+    return {column: (row.get(column) or "").strip() for column in REQUIRED_COLUMNS}
 
 
 def _is_blank_row(fields):
@@ -174,56 +177,61 @@ def build_import_plan(
 ):
     """
     Validate every row of the uploaded CSV and return an ImportPlan
-    describing exactly what would happen. Never touches the
+    describing exactly what would happen. Never writes to the
     database - the caller decides whether to apply it.
     """
     decoded_text = _read_decoded_text(uploaded_file)
-    reader = _build_reader(decoded_text)
+    reader, header = _build_reader(decoded_text)
 
-    plan = ImportPlan()
+    plan = ImportPlan(owner_id=owner.pk)
     seen_student_numbers = {}
 
-    for row_number, row in enumerate(reader, start=2):
-        if row_number - 1 > MAX_ROWS:
+    records = 0
+    while True:
+        # Physical starting line, including blank lines and multiline CSV records.
+        row_number = reader.line_num + 1
+        try:
+            raw_row = next(reader)
+        except StopIteration:
+            break
+        except csv.Error as exc:
+            plan.errors.append(
+                _error_entry(row_number, {"row": f"Malformed CSV: {exc}"})
+            )
+            break  # The parser cannot reliably recover after broken quoting.
+        records += 1
+        if records > MAX_ROWS:
             plan.errors.append(
                 _error_entry(
-                    row_number,
-                    {"file": f"File has more than {MAX_ROWS} data rows."},
+                    row_number, {"file": f"File has more than {MAX_ROWS} data rows."}
                 )
             )
             break
-
-        fields = _extract_fields(row)
-
-        if _is_blank_row(fields):
+        if not raw_row or (len(raw_row) == 1 and not raw_row[0].strip()):
             continue
-
-        plan.rows_processed += 1
-
-        if None in row:
+        row = dict(zip(header, raw_row))
+        fields = _extract_fields(row)
+        if len(raw_row) != len(header):
+            plan.rows_processed += 1
             plan.errors.append(
                 _error_entry(
                     row_number,
-                    {"row": "Row has more fields than the header."},
+                    {"row": "Row must have the same number of fields as the header."},
                     fields["student_number"],
                 )
             )
             continue
+        if _is_blank_row(fields) and all(not value.strip() for value in raw_row):
+            continue
+        plan.rows_processed += 1
 
-        missing_fields = [
-            column
-            for column in REQUIRED_COLUMNS
-            if fields[column] == ""
-        ]
+        missing_fields = [column for column in REQUIRED_COLUMNS if fields[column] == ""]
 
         if missing_fields:
             plan.errors.append(
                 _error_entry(
                     row_number,
-                    {
-                        column: "This field is required."
-                        for column in missing_fields
-                    },
+                    {column: "This field is required." for column in missing_fields},
                     fields["student_number"],
                 )
             )
@@ -256,6 +264,16 @@ def build_import_plan(
             student_number=student_number,
         ).first()
 
+        plan.expected_students[student_number] = {
+            "row": row_number,
+            "pk": existing_student.pk if existing_student else None,
+            "fields": (
+                {key: getattr(existing_student, key) for key in REQUIRED_COLUMNS}
+                if existing_student
+                else None
+            ),
+        }
+
         if existing_student is None:
             serializer = StudentSerializer(data=fields, context=serializer_context)
 
@@ -270,6 +288,15 @@ def build_import_plan(
                 continue
 
             plan.to_create.append(serializer.validated_data)
+            continue
+
+        serializer = StudentSerializer(
+            existing_student, data=fields, context=serializer_context
+        )
+        if not serializer.is_valid():
+            plan.errors.append(
+                _error_entry(row_number, serializer.errors, student_number)
+            )
             continue
 
         differences = {
@@ -291,25 +318,7 @@ def build_import_plan(
             )
 
         if update_existing and differences:
-            serializer = StudentSerializer(
-                existing_student,
-                data=fields,
-                context=serializer_context,
-            )
-
-            if not serializer.is_valid():
-                plan.errors.append(
-                    _error_entry(
-                        row_number,
-                        serializer.errors,
-                        student_number,
-                    )
-                )
-                continue
-
-            plan.to_update.append(
-                (existing_student, serializer.validated_data)
-            )
+            plan.to_update.append((existing_student, serializer.validated_data))
         else:
             plan.to_enroll_unchanged.append(existing_student)
 
@@ -317,27 +326,77 @@ def build_import_plan(
 
 
 def apply_import_plan(owner, course, plan):
-    with transaction.atomic():
-        try:
-            course = Course.objects.active().select_for_update().get(
-                pk=course.pk, owner=owner,
+    if not plan.is_valid or plan.owner_id != owner.pk:
+        raise CSVFileError("Only a valid plan for this owner can be applied.")
+    try:
+        with transaction.atomic():
+            try:
+                course = (
+                    Course.objects.active()
+                    .select_for_update()
+                    .get(pk=course.pk, owner=owner)
+                )
+            except Course.DoesNotExist as exc:
+                raise CSVFileError(
+                    "The course is archived or no longer available.", status_code=404
+                ) from exc
+            expected_ids = [
+                item["pk"]
+                for item in plan.expected_students.values()
+                if item["pk"] is not None
+            ]
+            locked = list(
+                Student.objects.select_for_update()
+                .filter(owner=owner)
+                .filter(
+                    Q(student_number__in=list(plan.expected_students))
+                    | Q(pk__in=expected_ids)
+                )
+                .order_by("pk")
             )
-        except Course.DoesNotExist as exc:
-            raise CSVFileError("The course is archived or no longer available.") from exc
-        students = []
-
-        for validated in plan.to_create:
-            students.append(
-                Student.objects.create(**{**validated, "owner": owner})
+            by_number = {student.student_number: student for student in locked}
+            conflicts = []
+            for number, expected in plan.expected_students.items():
+                current = by_number.get(number)
+                if getattr(current, "pk", None) != expected["pk"] or (
+                    current is not None
+                    and {key: getattr(current, key) for key in REQUIRED_COLUMNS}
+                    != expected["fields"]
+                ):
+                    conflicts.append(
+                        _error_entry(
+                            expected["row"],
+                            {
+                                "student_number": "Student details changed during import. Preview again."
+                            },
+                            number,
+                        )
+                    )
+            if conflicts:
+                raise CSVFileError(
+                    "Class list changed. Nothing was saved. Preview again.",
+                    status_code=409,
+                    errors=conflicts,
+                )
+            students = []
+            for validated in plan.to_create:
+                students.append(Student.objects.create(**{**validated, "owner": owner}))
+            for student, validated in plan.to_update:
+                current = by_number[student.student_number]
+                for attr in TRACKED_FIELDS:
+                    setattr(current, attr, validated[attr])
+                current.save(update_fields=[*TRACKED_FIELDS, "updated_at"])
+                students.append(current)
+            students.extend(
+                by_number[student.student_number]
+                for student in plan.to_enroll_unchanged
             )
-
-        for student, validated in plan.to_update:
-            for attr, value in validated.items():
-                setattr(student, attr, value)
-            student.save()
-            students.append(student)
-
-        students.extend(plan.to_enroll_unchanged)
-
-        for student in students:
-            Enrollment.objects.get_or_create(course=course, student=student)
+            for student in students:
+                Enrollment.objects.get_or_create(course=course, student=student)
+    except IntegrityError as exc:
+        # A concurrent create/delete may commit after preflight. The atomic block
+        # has rolled back before this public, non-database error is returned.
+        raise CSVFileError(
+            "Class list changed during import. Nothing was saved. Preview again.",
+            status_code=409,
+        ) from exc

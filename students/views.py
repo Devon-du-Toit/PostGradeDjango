@@ -12,7 +12,11 @@ from students.csv_import import (
 )
 from students.filters import EnrollmentFilter, StudentFilter
 from students.models import Enrollment, Student
-from students.serializers import EnrollmentSerializer, StudentSerializer
+from students.serializers import (
+    EnrollmentSerializer,
+    StudentSerializer,
+    CSVImportOptionsSerializer,
+)
 from submissions.emailing import send_student_email
 
 
@@ -122,10 +126,6 @@ class CourseStudentListView(generics.ListAPIView):
         ).order_by("student_number", "id")
 
 
-def _flag(value):
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
-
-
 class StudentCSVImportView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
@@ -144,8 +144,10 @@ class StudentCSVImportView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        dry_run = _flag(request.data.get("dry_run", False))
-        update_existing = _flag(request.data.get("update_existing", False))
+        options = CSVImportOptionsSerializer(data=request.data)
+        options.is_valid(raise_exception=True)
+        dry_run = options.validated_data["dry_run"]
+        update_existing = options.validated_data["update_existing"]
 
         try:
             plan = build_import_plan(
@@ -176,8 +178,11 @@ class StudentCSVImportView(generics.GenericAPIView):
                 apply_import_plan(request.user, course, plan)
             except CSVFileError as exc:
                 return Response(
-                    {"detail": exc.detail},
-                    status=status.HTTP_404_NOT_FOUND,
+                    {
+                        "detail": exc.detail,
+                        **({"errors": exc.errors} if exc.errors else {}),
+                    },
+                    status=exc.status_code,
                 )
 
         return Response(

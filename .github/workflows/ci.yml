@@ -63,7 +63,7 @@ jobs:
             submissions.tests.test_emailing \
             submissions.tests.test_submissions \
             submissions.tests.test_verification
-          python manage.py test accounts distribution assessments.tests
+          python manage.py test accounts students courses distribution assessments.tests
 
   integration:
     name: Integration tests (OCR / OpenCV)
