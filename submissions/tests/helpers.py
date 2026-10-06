@@ -3,6 +3,7 @@ import tempfile
 from io import BytesIO
 
 from django.test import override_settings
+import pymupdf
 from PIL import Image
 
 
@@ -29,3 +30,13 @@ def make_png(width=40, height=10):
     buffer = BytesIO()
     Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def make_pdf(pages=1):
+    # Upload validation opens the file, so tests must send a real PDF.
+    document = pymupdf.open()
+    for _ in range(pages):
+        document.new_page(width=200, height=200)
+    data = document.tobytes()
+    document.close()
+    return data

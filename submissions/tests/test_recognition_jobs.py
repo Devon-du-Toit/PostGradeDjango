@@ -18,6 +18,7 @@ from submissions import jobs
 from submissions.models import RecognitionJob, Submission
 from submissions.recognition.types import RecognitionResult
 from submissions.verification import verify_submission
+from submissions.tests.helpers import make_pdf
 
 
 RECOGNIZE = "submissions.jobs.recognize_submission"
@@ -337,7 +338,7 @@ class UploadQueueTests(RecognitionJobTestMixin, TestCase):
                 "assessment": self.assessment.id,
                 "file": SimpleUploadedFile(
                     name,
-                    b"fake pdf content",
+                    make_pdf(),
                     content_type="application/pdf",
                 ),
             },
@@ -473,7 +474,7 @@ class ReplacementUploadTests(RecognitionJobTestMixin, TestCase):
                 "assessment": self.assessment.id,
                 "file": SimpleUploadedFile(
                     "old.pdf",
-                    b"old content",
+                    make_pdf(),
                     content_type="application/pdf",
                 ),
             },
@@ -487,7 +488,7 @@ class ReplacementUploadTests(RecognitionJobTestMixin, TestCase):
             {
                 "file": SimpleUploadedFile(
                     name,
-                    b"new content",
+                    make_pdf(),
                     content_type="application/pdf",
                 ),
                 **extra,

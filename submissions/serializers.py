@@ -12,6 +12,11 @@ from submissions.models import (
     Submission,
 )
 
+from submissions.signals import delete_file_after_commit
+from submissions.validation import (
+    SubmissionFileValidationError,
+    validate_submission_file,
+)
 
 class RecognitionAttemptSerializer(serializers.ModelSerializer):
     region_image_url = serializers.SerializerMethodField()
@@ -78,6 +83,11 @@ class RecognitionJobSerializer(serializers.ModelSerializer):
 class SubmissionSerializer(serializers.ModelSerializer):
     recognition = serializers.SerializerMethodField()
     recognition_job = serializers.SerializerMethodField()
+    # "file" is accepted on upload but never rendered back out (see
+    # extra_kwargs): a raw MEDIA_URL path would be guessable and
+    # unauthenticated. Clients use download_url, the owner-checked endpoint.
+    download_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Submission
         fields = [
@@ -85,6 +95,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "assessment",
             "enrollment",
             "file",
+            "download_url",
             "original_filename",
             "status",
             "recognition",
@@ -100,6 +111,44 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        extra_kwargs = {
+            "file": {"write_only": True},
+        }
+
+    def get_download_url(self, submission):
+        if not submission.file:
+            return None
+
+        request = self.context.get("request")
+        path = reverse(
+            "submission-file-download",
+            args=[submission.id],
+        )
+
+        if request is not None:
+            return request.build_absolute_uri(path)
+
+        return path
+
+    def validate_file(self, file):
+        # Replacing a file is allowed until the submission is marked: a
+        # recorded grade exists against the current file from then on.
+        if (
+            self.instance is not None
+            and self.instance.status == Submission.Status.MARKED
+        ):
+            raise serializers.ValidationError(
+                "The file of a marked submission cannot be replaced."
+            )
+
+        # Checks the real content (type, size, pages, dimensions) before
+        # the file can reach the expensive recognition pipeline.
+        try:
+            validate_submission_file(file)
+        except SubmissionFileValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+
+        return file
 
     def get_recognition_job(self, submission):
         jobs = submission.recognition_jobs.all()
@@ -120,17 +169,6 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return RecognitionAttemptSerializer(
             attempts[0],
         ).data
-
-    def validate_file(self, file):
-        if (
-            self.instance is not None
-            and self.instance.status == Submission.Status.MARKED
-        ):
-            raise serializers.ValidationError(
-                "The file of a marked submission cannot be replaced."
-            )
-
-        return file
 
     def validate_version(self, value):
         instance = self.instance
@@ -199,6 +237,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
     def replace_file(self, instance, validated_data):
         # A new file invalidates any match made from the old one.
+        old_storage = instance.file.storage
+        old_name = instance.file.name
+
         validated_data["original_filename"] = validated_data["file"].name
         validated_data["enrollment"] = None
         validated_data["status"] = Submission.Status.PROCESSING
@@ -207,6 +248,15 @@ class SubmissionSerializer(serializers.ModelSerializer):
             cancel_active_jobs(instance)
             instance = super().update(instance, validated_data)
             enqueue_recognition(instance)
+
+            # The old file goes only once the new one is committed, so a
+            # failed replacement never leaves the submission without a file.
+            if old_name and old_name != instance.file.name:
+                delete_file_after_commit(
+                    old_storage,
+                    old_name,
+                    f"submission {instance.pk}",
+                )
 
         return instance
 
