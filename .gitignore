@@ -29,3 +29,5 @@ Thumbs.db
 
 # Django uploaded media
 media/
+# collectstatic output (built into the container image)
+staticfiles/

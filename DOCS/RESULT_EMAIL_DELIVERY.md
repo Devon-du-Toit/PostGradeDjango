@@ -43,11 +43,11 @@ The mark and a **result email record** are now saved together in one database tr
 | Requirement | Source | Addressed by |
 |---|---|---|
 | Mail Dispatch Worker retrieves approved deliveries and sends asynchronously | Technical Specification, Component Interaction | Sections 3, 4 |
-| 10.3 Send the correct script to the correct student | Functional Specification | Section 6.5 |
+| 10.3 Send the correct script to the correct student | Functional Specification | Open: current outbox sends result text, not scripts |
 | 10.4 Track email sending status | Functional Specification | Sections 5, 7.1 |
 | 10.5 Retry failed email deliveries | Functional Specification | Sections 6.1, 7.4 |
 | 10.7 Preview email before sending | Functional Specification | Sections 2.1, 7.1 |
-| 10.8 Send all approved scripts with one click | Functional Specification | Section 7.3 |
+| 10.8 Send all approved scripts with one click | Functional Specification | Section 7.3 approves result-text emails; script delivery remains open |
 | SF10-FR7 Automatic retry with exponential backoff, maximum 3 attempts | Technical Specification | Section 6.1 |
 | Data Integrity: duplicate distributions require explicit confirmation | Functional Specification, 2.6 | Section 6.3 |
 | Logging and Error Protection | Functional Specification, 3.4 | Section 7.1 (`failure_reason`) |

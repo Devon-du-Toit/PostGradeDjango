@@ -1,22 +1,18 @@
-import csv
-import io
-
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from courses.models import Course
-from students.models import Enrollment, Student
-from students.serializers import EnrollmentSerializer, StudentSerializer
-from django.db import transaction
-
-from django.shortcuts import get_object_or_404
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from students.models import Student
+from courses.models import Course
+from students.csv_import import (
+    CSVFileError,
+    apply_import_plan,
+    build_import_plan,
+)
+from students.filters import EnrollmentFilter, StudentFilter
+from students.models import Enrollment, Student
+from students.serializers import EnrollmentSerializer, StudentSerializer
 from submissions.emailing import send_student_email
 
 
@@ -66,9 +62,13 @@ class StudentEmailView(APIView):
 class StudentListCreateView(generics.ListCreateAPIView):
     serializer_class = StudentSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = StudentFilter
+    search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
-        return Student.objects.filter(owner=self.request.user)
+        return Student.objects.filter(
+            owner=self.request.user,
+        ).order_by("student_number", "id")
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -85,24 +85,35 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
 class EnrollmentListCreateView(generics.ListCreateAPIView):
     serializer_class = EnrollmentSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = EnrollmentFilter
+    search_fields = [
+        "student__student_number",
+        "student__first_name",
+        "student__last_name",
+    ]
 
     def get_queryset(self):
         return Enrollment.objects.filter(
             course__owner=self.request.user,
             student__owner=self.request.user,
-        )
+        ).order_by("course_id", "student__student_number", "id")
 
 
 class CourseStudentListView(generics.ListAPIView):
     serializer_class = StudentSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = ["student_number", "first_name", "last_name", "email"]
 
     def get_queryset(self):
         return Student.objects.filter(
             owner=self.request.user,
             enrollments__course_id=self.kwargs["course_id"],
             enrollments__course__owner=self.request.user,
-        )
+        ).order_by("student_number", "id")
+
+
+def _flag(value):
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 class StudentCSVImportView(generics.GenericAPIView):
@@ -123,67 +134,46 @@ class StudentCSVImportView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        decoded_file = uploaded_file.read().decode("utf-8")
-        reader = csv.DictReader(io.StringIO(decoded_file))
+        dry_run = _flag(request.data.get("dry_run", False))
+        update_existing = _flag(request.data.get("update_existing", False))
 
-        required_columns = {
-            "student_number",
-            "first_name",
-            "last_name",
-            "email",
-        }
+        try:
+            plan = build_import_plan(
+                request.user,
+                uploaded_file,
+                update_existing=update_existing,
+                serializer_context={"request": request},
+            )
+        except CSVFileError as exc:
+            return Response(
+                {"file": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        missing_columns = required_columns - set(reader.fieldnames or [])
-
-        if missing_columns:
+        if not plan.is_valid:
             return Response(
                 {
-                    "file": (
-                            "Missing required columns: "
-                            + ", ".join(sorted(missing_columns))
-                    )
+                    "message": "Import failed. Nothing was saved.",
+                    "errors": plan.errors,
+                    "summary": plan.summary(),
+                    "mismatches": plan.mismatches_payload(),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        with transaction.atomic():
-            for row_number, row in enumerate(reader, start=2):
-                existing_student = Student.objects.filter(
-                    owner=request.user,
-                    student_number=row["student_number"],
-                ).first()
-
-                if existing_student:
-                    student = existing_student
-                else:
-                    serializer = StudentSerializer(
-                        data={
-                            "student_number": row["student_number"],
-                            "first_name": row["first_name"],
-                            "last_name": row["last_name"],
-                            "email": row["email"],
-                        }
-                    )
-
-                    if not serializer.is_valid():
-                        transaction.set_rollback(True)
-
-                        return Response(
-                            {
-                                "row": row_number,
-                                "errors": serializer.errors,
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-
-                    student = serializer.save(owner=request.user)
-
-                Enrollment.objects.get_or_create(
-                    course=course,
-                    student=student,
-                )
+        if not dry_run:
+            apply_import_plan(request.user, course, plan)
 
         return Response(
-            {"message": "Students imported successfully."},
+            {
+                "message": (
+                    "Dry run complete. Nothing was saved."
+                    if dry_run
+                    else "Students imported successfully."
+                ),
+                "dry_run": dry_run,
+                "summary": plan.summary(),
+                "mismatches": plan.mismatches_payload(),
+            },
             status=status.HTTP_200_OK,
         )

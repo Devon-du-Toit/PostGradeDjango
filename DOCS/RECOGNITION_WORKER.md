@@ -227,8 +227,8 @@ The retry limit is listed as TBD in the Technical Specification Issues List (Iss
 - The worker must run as a **managed service** that starts on boot and restarts on exit (for example a Docker container with a restart policy, a systemd unit, or a Windows service). It must not be run from an interactive terminal.
 - The worker needs the same code, environment variables and database access as the web server, and read access to the uploaded files (`MEDIA_ROOT`).
 - Run **at least two** workers so that one can recover jobs from another that has hung (see Issue 01).
-- Each worker loads its own copy of the PaddleOCR models, which uses several hundred megabytes of memory. Size the host accordingly.
-- Worker errors are currently written to the worker's console only. Production logging is part of Issue #14.
+- Each worker loads its own copy of the PaddleOCR models: about 170 MB idle and 715 MB while recognising (measured 1 October 2026). Size the host accordingly.
+- Worker errors are logged to stdout (JSON in production, job IDs only). See `DOCS/DEPLOYMENT.md`, Sections 7.2 and 7.3, for logs, failure visibility and running workers in containers.
 
 ---
 

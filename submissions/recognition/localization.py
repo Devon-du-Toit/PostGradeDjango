@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from paddleocr import PaddleOCR
 from PIL import Image
 
 from submissions.recognition.types import (
@@ -14,6 +13,12 @@ def get_ocr():
     global _ocr
 
     if _ocr is None:
+        # Imported on first use, not at module level: only the recognition
+        # worker runs OCR, while every web process imports this module
+        # through the views. Loading PaddleOCR there would cost each one
+        # ~96 MB and ~3.3 s at startup for nothing.
+        from paddleocr import PaddleOCR
+
         _ocr = PaddleOCR(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,

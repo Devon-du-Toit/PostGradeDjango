@@ -490,7 +490,7 @@ class ApprovalPolicyTests(ResultEmailTestMixin, TestCase):
             f"/api/assessments/{self.assessment.id}/result-emails/"
         )
 
-        preview = response.data[0]
+        preview = response.data["results"][0]
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(preview["recipient"], "12345678@example.com")

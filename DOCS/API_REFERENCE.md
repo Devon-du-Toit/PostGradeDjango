@@ -5,6 +5,7 @@
 | Date | Author | Change |
 |---|---|---|
 | 2026-09-30 | @CiViCDottir | Initial version (issue #15) |
+| 2026-10-06 | PostGrade maintainers | Release integration reference: pagination, CSV, protected files, archives, authentication and operations |
 
 ## Table of Contents
 
@@ -21,6 +22,7 @@
 11. [Error Response Conventions](#11-error-response-conventions)
 12. [Related Resources](#12-related-resources)
 13. [Issues List](#13-issues-list)
+14. [Release Integration Status](#14-release-integration-status)
 
 ---
 
@@ -50,16 +52,21 @@ Written to close issue #15 ("Update backend documentation and API
 examples for current workflows"), created from the PostGrade
 development review on 2026-09-14.
 
-### 1.4 A note on timing
+### 1.4 Release baseline
 
-At the time of writing, PR #22 (submission file validation,
-authorized downloads, and storage lifecycle) has **not yet been
-merged**. Section 8 documents the submission API as it exists on
-`master` today. Once #22 merges, this document (and
-`RECOGNITION_EVIDENCE_API.md`) will need a follow-up update to
-describe the new authorized file-download endpoint and the
-replacement/deletion behaviour it introduces. This is a recorded,
-known gap — not an oversight.
+This reference documents the consolidated release behavior, not a claim
+that every merged PR has reached `master`. The baseline inspected on
+6 October 2026 is `master` at `33721de`, with the completed archive
+implementation in PR #39 (`f9a3305`) and authentication/cleanup/queue work
+in the stacked branches listed in [§14](#14-release-integration-status).
+Integrate those implementations into `master` before merging this reference
+as the final release documentation. Until then, the archive, registration,
+throttle, Ruff and failed-recognition queue rules are release-target rules.
+
+File validation/downloads (#22), transition locking (#24), pagination and
+dashboard APIs (#29), deployment groundwork (#32), duplicate validation
+(#31) and CSV hardening (#36) are already on the inspected master.
+Bubble recognition, QR grouping and deployed staging validation remain open.
 
 ---
 
@@ -96,6 +103,7 @@ JSON response
 | `students` | Students, enrollments, CSV import | Documented in §6 |
 | `assessments` | Assessments, results, gradebook, statistics | Documented in §7 |
 | `submissions` | Uploaded scripts, OCR recognition, verification | Summarized in §8; full detail in `RECOGNITION_EVIDENCE_API.md` and `RECOGNITION_WORKER.md` |
+| `dashboard` | Owner-scoped counts and assessment progress | §3 and `API_CONTRACT.md` |
 | `distribution` | Result email delivery | Summarized in §9; full detail in `RESULT_EMAIL_DELIVERY.md` |
 
 ### 2.2 The ownership pattern
@@ -115,24 +123,49 @@ this pattern.
 - **Base path:** all endpoints below are relative to `/api/`.
 - **Format:** all requests and responses use JSON, except file
   uploads (`multipart/form-data`) and file downloads.
-- **Authentication:** every endpoint except `register`, `login` and
+- **Authentication:** API endpoints except `register`, `login` and
   `refresh` requires a JWT access token (see §4). `refresh` takes the
   refresh token in the request body, so it works without an access
   token.
-- **Pagination:** list endpoints are **not paginated** — they
-  return a plain JSON array of every matching object. This is worth
-  knowing if a course ever has a very large number of students or
-  submissions.
+- **Pagination:** list endpoints return `{count, next, previous, results}`.
+  `page` defaults to 1; `page_size` defaults to 25 and is capped at 100.
+  Empty first pages return `200` with `results: []`; out-of-range pages
+  return `404`. Read all required pages rather than treating page 1 as a
+  complete class list. Filters/search are validated and owner-scoped; see
+  [API_CONTRACT.md](API_CONTRACT.md) for each list's filters and ordering.
+- **Dates and values:** dates use `YYYY-MM-DD`, timestamps carry timezone
+  information, and serializer decimal fields such as marks/maxima/weights
+  are strings. Calculated percentages in custom JSON responses are numbers;
+  clients should format them for display. Student numbers are strings.
+- **Archive scope:** after #39 is integrated, normal workflows exclude
+  archived courses/assessments. Detail/action routes return `404`, while
+  filters and foreign-key inputs naming archived records return `400`.
+  See [ARCHIVING.md](ARCHIVING.md).
+
 - **Examples use synthetic data only.** No email address, name, or
   student number in this document corresponds to a real person.
 
 ---
 
+### 3.1 Dashboard and operational endpoints
+
+| Method | Endpoint | Authentication and result |
+|---|---|---|
+| `GET` | `/api/dashboard/stats/` | JWT; current-year course count, pending review and counts by status |
+| `GET` | `/api/dashboard/assessments/` | JWT; paginated assessment progress with course/search filters |
+| `GET` | `/health/live/` | No JWT; process liveness, no database query |
+| `GET` | `/health/ready/` | No JWT; database readiness, 200 or 503 |
+
+The release queue/pending count includes `matched`, `needs_verification`
+and `recognition_failed` once #41's code reaches master. #39 removes
+archived parents from these counts. Health paths are outside `/api/` and
+are handled by middleware; other paths still apply normal host checks.
+
 ## 4. Authentication (`/api/auth/`)
 
 | Method | Endpoint | Auth required | Purpose |
 |---|---|---|---|
-| `POST` | `/api/auth/register/` | No | Create a user |
+| `POST` | `/api/auth/register/` | No | Create a user when registration is enabled; otherwise 403 |
 | `POST` | `/api/auth/login/` | No | Obtain JWT access + refresh tokens |
 | `POST` | `/api/auth/refresh/` | No (refresh token) | Obtain a new access token |
 | `GET` | `/api/auth/me/` | Yes | Return the authenticated user |
@@ -144,6 +177,19 @@ PostGrade uses a custom user model with **email as the login field**
 access to specific endpoints.
 
 ### 4.1 Register
+
+Release policy from #33: `ALLOW_REGISTRATION` defaults to `DEBUG`, so local
+development is open and production is closed unless explicitly enabled.
+A closed signup returns `403`; administrators create lecturer accounts in
+Django admin. Login defaults to 10 attempts/minute and signup to 5/hour per
+client, then `429` with `Retry-After`. Counts use the shared database cache
+created by migration. Configure `NUM_PROXIES` for the actual trusted proxy
+topology; do not blindly trust forwarded client headers. These controls
+must first be integrated from the stacked auth branch (see §14).
+
+Roles remain stored labels with authenticated owner access, not delegated
+course authorization. Password reset, token revocation and browser token
+storage follow-ups are in [PERMISSIONS.md](PERMISSIONS.md).
 
 **Request**
 ```http
@@ -228,7 +274,7 @@ year/semester.
 | `POST` | `/api/courses/` | Create a course (owner is set automatically) |
 | `GET` | `/api/courses/<id>/` | Retrieve one course |
 | `PUT`/`PATCH` | `/api/courses/<id>/` | Update a course |
-| `DELETE` | `/api/courses/<id>/` | Delete a course (cascades to its assessments, enrollments, and submissions) |
+| `DELETE` | `/api/courses/<id>/` | Archive a course, retaining its data/files; 204 (#39 release policy) |
 | `GET` | `/api/courses/<course_id>/students/` | List students enrolled in this course |
 | `POST` | `/api/courses/<course_id>/import-students/` | Bulk-import students from a CSV file |
 
@@ -261,84 +307,85 @@ Content-Type: application/json
 }
 ```
 
-**Known gap — duplicate course currently returns `500`, not `400`.**
-Verified directly against the code: creating a duplicate course for
-the same owner/code/year/semester raises an unhandled
-`django.db.utils.IntegrityError`, which surfaces as a raw
-`500 Internal Server Error` rather than a clean validation message.
-`CourseSerializer` does not declare a `UniqueTogetherValidator`
-matching the model's database constraint, so Django REST Framework
-never gets a chance to catch this before it reaches the database.
-This is a real bug worth its own follow-up issue, not a
-documentation gap — flagging it here rather than describing
-behaviour that doesn't actually exist.
+**Duplicate validation — `400 Bad Request`**
+
+Creating or updating a course into the same owner/code/year/semester key
+returns a field error under `code`. Student-number duplicates for the same
+owner likewise return `400`; editing a record without changing its key is
+allowed. Database uniqueness remains the final integrity constraint.
 
 ### 5.2 CSV student import
 
-**The CSV format** (this was previously undocumented anywhere in
-the project):
+Send the class-list file as multipart field `file`. Required headers are
+`student_number,first_name,last_name,email` in any order. UTF-8 and UTF-8
+BOM are supported; row values are trimmed and student-number leading zeros
+are preserved. Limits are 2 MB and 5,000 data rows. Blank rows are skipped;
+missing/extra fields, duplicate numbers and validation errors are reported.
+The importer reads CSV text; a filename extension is not a content check.
 
-- Must be a genuine `.csv` file, sent as `multipart/form-data` under
-  the field name `file`.
-- Required header columns, in any order:
-  `student_number,first_name,last_name,email`
-- One student per row.
-
-**Example file — `roster.csv`**
 ```csv
 student_number,first_name,last_name,email
-20261001,Naledi,Dlamini,naledi.dlamini@example.edu
+0020261001,Naledi,Dlamini,naledi.dlamini@example.edu
 20261002,Thabo,Mokoena,thabo.mokoena@example.edu
-20261003,Aisha,Khan,aisha.khan@example.edu
 ```
 
-**Request**
 ```http
 POST /api/courses/12/import-students/
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 
 file: roster.csv
+dry_run: false
+update_existing: false
 ```
 
-**Response — `200 OK`**
+The entire file is validated before saving. Any invalid row returns `400`
+and no planned updates, creates or enrollments are applied. Actual writes
+commit together in one transaction. Reimports reuse owner-scoped students
+and enrollments. An existing student's name/email is preserved by default;
+differences appear in `mismatches`. `update_existing=true` explicitly opts
+into updates. `dry_run=true` returns planned counts/mismatches without
+saving, including when combined with `update_existing=true`.
+
+**Success — `200 OK`**
 ```json
 {
-  "message": "Students imported successfully."
+  "message": "Students imported successfully.",
+  "dry_run": false,
+  "summary": {
+    "total": 2, "failed": 0, "rows_processed": 2,
+    "created": 2, "updated": 0, "matched_unchanged": 0, "enrolled": 2
+  },
+  "mismatches": []
 }
 ```
 
-**Import behaviour, worth knowing:**
-- If a student with the same `student_number` already exists for
-  this lecturer, the existing student record is reused (matched by
-  `owner` + `student_number`) rather than duplicated — only a new
-  `Enrollment` linking them to this course is created.
-- If a student with that number doesn't exist yet, a new `Student`
-  record is created.
-- The whole import runs inside a single database transaction: if
-  **any** row fails validation, the **entire** import is rolled
-  back — no partial imports.
-
-**Error — `400 Bad Request`** (missing required column)
+**Row validation — `400 Bad Request`**
 ```json
 {
-  "file": "Missing required columns: email"
+  "message": "Import failed. Nothing was saved.",
+  "errors": [{
+    "row": 2,
+    "student_number": "20261002",
+    "errors": {"email": ["Enter a valid email address."]},
+    "message": "email: Enter a valid email address."
+  }],
+  "summary": {
+    "total": 1, "failed": 1, "rows_processed": 1,
+    "created": 0, "updated": 0, "matched_unchanged": 0, "enrolled": 0
+  },
+  "mismatches": []
 }
 ```
 
-**Error — `400 Bad Request`** (a specific row fails validation —
-e.g. malformed email)
-```json
-{
-  "row": 2,
-  "errors": {
-    "email": ["Enter a valid email address."]
-  }
-}
-```
-(`row` counts the header as row 1, so `2` is the *first* data row —
-matching what a lecturer would see if they opened the CSV in a
-spreadsheet program, where row 1 is the header.)
+Counts describe the validated plan, including in a dry run or a rejected
+mixed batch; the explicit response message says whether anything was saved.
+`row` numbers start at 2 after the header. File-level errors use
+`{"file": "Missing required columns: email"}` (also for unreadable encoding
+or exceeded size limits). A mismatch contains `row`, `student_number` and
+`differences`, mapping changed fields to `existing`/`incoming` values.
+An archived course returns `404` once #39 is integrated, including when
+archiving occurs between validation and applying a plan.
 
 ---
 
@@ -455,7 +502,7 @@ which cannot exceed the assessment's `max_mark`.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET`/`POST` | `/api/courses/<course_id>/assessments/` | List/create assessments for a course |
-| `GET`/`PUT`/`PATCH`/`DELETE` | `/api/assessments/<id>/` | Manage one assessment |
+| `GET`/`PUT`/`PATCH`/`DELETE` | `/api/assessments/<id>/` | Manage one assessment; DELETE archives with 204 (#39 release policy) |
 | `GET`/`POST` | `/api/assessments/<assessment_id>/results/` | List/create results for an assessment |
 | `GET`/`PUT`/`PATCH`/`DELETE` | `/api/results/<id>/` | Manage one result |
 | `GET` | `/api/courses/<course_id>/gradebook/` | Full gradebook for a course |
@@ -527,8 +574,8 @@ Content-Type: application/json
 }
 ```
 
-**Note:** editing a `Result` that has already had a result email
-sent to the student automatically triggers a **corrected** email
+**Note:** editing a `Result` that has any existing result-email record
+schedules an email for the new mark version
 (see §9) — a `Result` also carries a `version` number, incremented
 on every mark change, which the email system uses to avoid sending
 duplicate or stale notifications.
@@ -556,13 +603,13 @@ Authorization: Bearer <token>
         {
           "assessment": 30,
           "name": "Test 2",
-          "mark": "42.00",
-          "max_mark": "50.00",
-          "percentage": "84.0000",
-          "weight": "15.00"
+          "mark": 42.0,
+          "max_mark": 50.0,
+          "percentage": 84.0,
+          "weight": 15.0
         }
       ],
-      "course_percentage": "84.00"
+      "course_percentage": 84.0
     }
   ]
 }
@@ -573,15 +620,12 @@ hasn't been marked for yet. `course_percentage` is a weighted
 average across only the assessments that **do** have a recorded
 result — an ungraded assessment does not count against a student.
 
-**Known inconsistency, verified directly:** the per-assessment
-`percentage` here is **not rounded** (`"84.0000"`, four decimal
-places) because `CourseGradebookView` computes it manually with raw
-Decimal division and no `.quantize()` call. This differs from
-`ResultSerializer.get_percentage()` (§7.2), which explicitly rounds
-to 2 decimal places. Both values are mathematically correct — this
-is a formatting inconsistency between two different code paths, not
-a bug in the calculation itself, but worth knowing if the frontend
-displays both figures side by side.
+Gradebook values are calculated with Python `Decimal`, but DRF's JSON
+renderer emits those custom response values as JSON numbers. The direct
+result serializer emits `mark` as a decimal string and a rounded numeric
+`percentage`. Do not infer fixed display precision from JSON numeric values;
+format percentages in the client. After #39, archived assessments are
+excluded from both the gradebook and weighted course percentage.
 
 ### 7.4 Assessment statistics
 
@@ -597,9 +641,9 @@ Authorization: Bearer <token>
   "assessment": 30,
   "name": "Test 2",
   "graded_count": 1,
-  "average_percentage": "84.00",
-  "minimum_percentage": "84.00",
-  "maximum_percentage": "84.00"
+  "average_percentage": 84.0,
+  "minimum_percentage": 84.0,
+  "maximum_percentage": 84.0
 }
 ```
 
@@ -642,8 +686,9 @@ background worker (see `RECOGNITION_WORKER.md`) attempts automatic
 recognition. Each job gets up to three attempts (the default
 `max_attempts`); if all fail, the submission becomes
 `recognition_failed`. If a student is found it becomes `matched`,
-otherwise `needs_verification`. The system never guesses: both
-`matched` and `needs_verification` submissions appear in the
+otherwise `needs_verification`. Recognition suggestions require human
+confirmation: `matched`, `needs_verification` and `recognition_failed`
+submissions appear in the release
 verification queue (`GET /api/submissions/verification-queue/`) for
 a human to confirm or resolve.
 
@@ -651,53 +696,102 @@ a human to confirm or resolve.
   `recognition_failed` or `needs_verification` submission back into
   `processing`. Retrying one that is already `processing` does
   nothing; any other status is rejected.
-- **Verify** (`POST /api/submissions/<id>/verify/`) is refused only
-  for a `marked` submission, and the chosen enrollment must belong to
-  the submission's course.
+- **Verify** (`POST /api/submissions/<id>/verify/`) accepts legal transitions
+  from `processing`, `matched`, `needs_verification`, `recognition_failed`
+  or `verified`; it rejects `uploaded` and `marked`. The chosen enrollment
+  must belong to the submission's course. Validation uses the locked row.
+  The generic PATCH/version and correction gaps remain tracked in #6.
 - **Mark** (`POST /api/submissions/<id>/mark/`) requires the status
   `verified`; otherwise it returns 400.
 
-### 8.2 Known gap: PR #22 (in progress)
+### 8.2 Protected files and replacement
 
-As of this writing, `master` does **not** yet include:
-- Content/size validation on uploaded files
-- An authorized, ownership-checked download endpoint for the
-  original file
-- Deletion-triggered storage cleanup, or a decision on file
-  replacement
+Uploaded PDF/JPG/JPEG/PNG content is opened and validated, not trusted from
+its name alone. Limits: 15 MB, 20 PDF pages, and decoded dimensions of
+6,000 pixels. Recognition reads PDF page 1; multipage QR grouping is not
+implemented. Invalid content/size/dimensions return `400` field errors.
 
-These are all part of PR #22, still under review. Once merged, this
-section and `RECOGNITION_EVIDENCE_API.md` should be updated together
-to describe the new download endpoint and replacement policy.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/submissions/<id>/file/` | Authenticated owner download of the original |
+| `GET` | `/api/submissions/<id>/recognition-image/` | Authenticated latest number-area crop |
+| `DELETE` | `/api/submissions/<id>/` | Delete the submission and clean stored original/crops after commit |
+| `PATCH` | `/api/submissions/<id>/` | Replace an unmarked file using multipart input; restart recognition |
+
+`file` is write-only input. Responses expose `download_url`, not a public
+`/media/` URL; preview clients must fetch with their token, then display a
+blob. Marked files cannot be replaced. Replacement cancels prior recognition,
+clears the enrollment and deletes the old file only after the new database
+transaction commits. Deleting a marked submission retains its separate
+Result, but the current submission-bound audit relationship is still
+`CASCADE`; changing that relationship is a separate #10 decision.
+
+Generic updates require `version`; the replacement path still has the
+version/audit gaps recorded in #6. Storage cleanup is implemented, but
+there is no timed retention purge. #39 blocks all these paths for archived
+parents without deleting their files. See the detailed recognition and
+[archive documentation](ARCHIVING.md).
 
 ---
 
 ## 9. Result Email Delivery
 
-Sending a student their mark is handled asynchronously by the
-`distribution` app, with its own background mail worker. Fully
-documented in **`DOCS/RESULT_EMAIL_DELIVERY.md`**, including retry
-behaviour, how edited marks trigger a corrected email, and the full
-API for inspecting delivery status.
+Saving a mark and its result-email record commit together. A mail worker
+delivers later; mark-save success is separate from email delivery. The
+default release policy is `automatic`; `approval` creates
+`awaiting_approval` records. Email statuses are `awaiting_approval`,
+`queued`, `sending`, `sent`, `failed` and `superseded`.
+
+Read `/api/assessments/<id>/result-emails/` as a paginated list. Match email
+records to Result IDs and use `is_current` for the current mark version.
+Preview the server's `recipient`, `subject` and `body`. Approval and retry
+use **email IDs**, not Result IDs; `delivery_unknown` retry requires
+`confirm_duplicate: true` because delivery may already have occurred.
+Marking returns `email_delivery` alongside the Result. See
+[RESULT_EMAIL_DELIVERY.md](RESULT_EMAIL_DELIVERY.md) for all endpoints.
+
+These emails currently contain mark/percentage text; they do not attach
+the marked script or grant student download access. Original-script return
+still needs an agreed delivery mechanism. Once #39 is integrated, archive
+suppresses unsent email work while retaining delivery history; an SMTP
+send already in progress cannot be recalled.
 
 ---
 
 ## 10. Data Lifecycle and Operations
 
-- **Database backup and restore** is documented in
-  **`DOCS/BACKUP_RESTORE.md`**.
-- **Submission file retention** (how long uploaded files are kept,
-  and what happens to storage when a submission is deleted) is
-  being defined as part of PR #22 — see §8.2. Until that merges,
-  there is no automatic cleanup of submission files anywhere in the
-  codebase.
-- **Running tests:**
+- **Archive policy (#39 release prerequisite):** course/assessment DELETE
+  returns `204`, hides archived workflows and retains records and files.
+  Later reads/actions return `404`; filters/foreign-key inputs return `400`.
+  Queued recognition and unsent emails are cancelled/superseded. Global
+  student contacts remain available for other active courses. There is no
+  restore endpoint; archived course keys still count toward uniqueness.
+  See [ARCHIVING.md](ARCHIVING.md).
+- **Other deletes:** student and Result DELETE are still destructive, with
+  the model's existing cascade rules. Course/assessment archiving does not
+  change those relationships or make every database deletion safe.
+- **Retention:** no automatic age-based purge. Submission deletion cleans
+  originals and crops after commit; replacement cleans the old original
+  after the new transaction commits. Archiving never purges files.
+- **Production:** [DEPLOYMENT.md](DEPLOYMENT.md) covers environment secrets,
+  HTTPS/proxy/CORS, database/private media, containers, workers, logs,
+  rollback and staging checklist. Configuration/container groundwork is
+  implemented; a host and successful deployed staging demonstration still
+  need evidence. `GET /health/live/` and `GET /health/ready/` are outside
+  `/api/`; readiness returns `503` when the database is unavailable.
+- **Recovery:** [BACKUP_RESTORE.md](BACKUP_RESTORE.md) documents backup and
+  restore; representative existing-data migration/performance checks
+  remain distinct from the completed local recovery demonstration.
+- **Verification commands:**
   ```bash
-  python manage.py test              # full suite
-  python manage.py test submissions  # one app
   python manage.py check
-  python manage.py makemigrations --check
+  python manage.py makemigrations --check --dry-run
+  python manage.py test
   ```
+  Fast CI runs audit/email/submission/verification tests; integration runs
+  the full suite including OCR. #37 adds enforced Ruff lint after its code
+  reaches master; formatting remains non-blocking until the separate
+  formatting pass. See [CI.md](CI.md).
 
 ---
 
@@ -707,8 +801,9 @@ Across all apps in this document (accounts, courses, students,
 assessments), validation errors follow Django REST Framework's
 default shape: a JSON object whose keys are the field names that
 failed, each mapping to a list of human-readable messages.
-Non-field errors (e.g. a uniqueness constraint spanning several
-fields) appear under `"non_field_errors"`.
+Non-field errors may appear under `"non_field_errors"`. CSV errors use the
+separate summary/row envelope in §5.2; file-level CSV errors use a string
+under `file`. Action errors usually use `detail`.
 
 ```json
 {
@@ -729,7 +824,12 @@ Common HTTP status codes used throughout:
 | `201 Created` | Successful POST that created something |
 | `400 Bad Request` | Validation failed |
 | `401 Unauthorized` | Missing or invalid JWT token |
-| `404 Not Found` | Object doesn't exist, **or** exists but belongs to a different user (deliberate — see §2.2) |
+| `404 Not Found` | Missing/other-owner object, out-of-range page, or archived workflow after #39 |
+| `403 Forbidden` | Registration disabled by release policy |
+| `429 Too Many Requests` | Auth throttle exceeded; respect `Retry-After` |
+| `204 No Content` | Successful delete/archive; body is empty |
+| `202 Accepted` | Retry/approval queued asynchronous work |
+| `503 Service Unavailable` | Database readiness failed |
 
 ---
 
@@ -741,6 +841,10 @@ Common HTTP status codes used throughout:
 | `DOCS/RECOGNITION_EVIDENCE_API.md` | Full submission/recognition API, quality checks, bubble format (planned) |
 | `DOCS/RECOGNITION_WORKER.md` | Background recognition worker setup and troubleshooting |
 | `DOCS/RESULT_EMAIL_DELIVERY.md` | Async result email delivery |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Production setup, workers, staging and rollback |
+| [`PERMISSIONS.md`](PERMISSIONS.md) | Release permission matrix, registration/throttling and F1–F4 |
+| [`API_CONTRACT.md`](API_CONTRACT.md) | Pagination, filtering, dashboard counts and types |
+| [`ARCHIVING.md`](ARCHIVING.md) | Archive enforcement, preservation and worker limits |
 | `DOCS/BACKUP_RESTORE.md` | Database backup and recovery |
 | `DOCS/CI.md`, `DOCS/DB_REVIEW.md` | CI pipeline and database review notes |
 | [PostGradeVue repository](https://github.com/Devon-du-Toit/PostGradeVue) | The Vue.js frontend that consumes this API |
@@ -750,7 +854,34 @@ Common HTTP status codes used throughout:
 
 ## 13. Issues List
 
-| Issue | Status |
+| Issue | Remaining behavior or decision |
 |---|---|
-| #15 | This document — architecture and endpoint inventory for accounts, courses, students, assessments |
-| #22 | Submission file validation and authorized downloads — pending; see §8.2 |
+| #1 | Bubble registration markers, decoding and agreed held-out recognition metrics |
+| #6 | Generic PATCH/replacement concurrency, marked identity correction, consistent versions/audits and Vue coordination |
+| #8 | Role/delegated access, password recovery, server logout/revocation and browser token storage (F1–F4) |
+| #9/#10 | Restore/course-key reuse, enrollment lifecycle and model-level deletion protection; representative-data checks |
+| #12 | Service extraction and a separate enforced formatting pass |
+| #14 | Deployed host/HTTPS/CORS/private media/workers and staging demonstration |
+| #26/#27 | QR page grouping and optional assessment ZIP export |
+| #42 | CSV bulk lookup/create query optimization |
+
+Protected originals and cleanup are implemented by #22; they are not open
+file-download gaps. Original-script delivery to students remains separate
+from the implemented result-text email outbox.
+
+## 14. Release Integration Status
+
+Checked 6 October 2026. A PR marked merged can have a non-master base.
+
+| Behavior | Inspected implementation | Prerequisite before these docs represent master |
+|---|---|---|
+| CSV/pagination/files/transition-lock/deployment foundation | `master` `33721de` | Already present |
+| Archive enforcement and retained files | PR #39 head `f9a3305` | Merge #39 into master |
+| Registration/throttling | #33 merged into `issue-14-deployment` | Integrate auth commits into master |
+| Ruff cleanup/lint | #37 merged into `issue-8-auth-hardening` | Integrate cleanup commits into master |
+| Failed recognitions in queue/dashboard | #41 merged into `issue-12-safe-cleanup` | Integrate queue commits into master |
+
+The top `issue-12-safe-cleanup` branch (`bc72474` at inspection) contains
+the stacked auth/cleanup/queue work. Integrate it with the repaired current
+master and #39, resolving overlaps and rerunning CI; do not assume merging
+into a parent branch releases the code. PR #40 changes documentation only.

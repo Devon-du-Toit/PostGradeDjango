@@ -138,8 +138,8 @@ class CourseAPITests(TestCase):
         response = self.client.get("/api/courses/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["code"], "PHY101")
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["code"], "PHY101")
 
     def test_unauthenticated_user_cannot_list_courses(self):
         self.client.force_authenticate(user=None)
@@ -214,3 +214,64 @@ class CourseAPITests(TestCase):
         self.assertFalse(
             Course.objects.filter(id=course.id).exists()
         )
+
+    def _create_course(self, **overrides):
+        payload = {
+            "code": "PHY101",
+            "name": "Introduction to Physics",
+            "year": 2026,
+            "semester": 1,
+            **overrides,
+        }
+        return self.client.post("/api/courses/", payload, format="json")
+
+    def test_duplicate_course_returns_400_not_500(self):
+        self._create_course()
+
+        response = self._create_course(name="Physics again")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("code", response.data)
+        self.assertEqual(Course.objects.filter(code="PHY101").count(), 1)
+
+    def test_same_code_in_another_period_is_allowed(self):
+        self._create_course()
+
+        response = self._create_course(semester=2)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_other_lecturer_can_use_the_same_code(self):
+        self._create_course()
+        other = get_user_model().objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=other)
+
+        response = self._create_course()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_update_into_duplicate_returns_400(self):
+        self._create_course()
+        second = self._create_course(semester=2).data
+
+        response = self.client.patch(
+            f"/api/courses/{second['id']}/",
+            {"semester": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_without_changing_period_is_allowed(self):
+        course = self._create_course().data
+
+        response = self.client.patch(
+            f"/api/courses/{course['id']}/",
+            {"name": "Renamed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
