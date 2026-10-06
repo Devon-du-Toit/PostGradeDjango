@@ -339,6 +339,7 @@ def build_import_plan(
         else:
             plan.to_enroll_unchanged.append(existing_student)
 
+    plan.errors.sort(key=lambda error: error["row"])
     return plan
 
 
