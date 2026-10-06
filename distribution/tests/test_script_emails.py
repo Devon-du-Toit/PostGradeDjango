@@ -135,6 +135,70 @@ class ScriptEmailTests(ScriptFixture, TestCase):
             401,
         )
 
+    def test_legacy_sent_and_queued_keys_reuse_existing_snapshots(self):
+        for state in ("queued", "sent"):
+            with self.subTest(state=state):
+                email = self.schedule()
+                ScriptEmail.objects.filter(pk=email.pk).update(
+                    idempotency_key=f"submission-{self.submission.pk}-v{self.submission.version}",
+                    status=state,
+                )
+                before = ScriptEmail.objects.count()
+                with patch("distribution.dispatch.EmailMessage.send") as send:
+                    same = self.schedule()
+                self.assertEqual(same.pk, email.pk)
+                self.assertEqual(ScriptEmail.objects.count(), before)
+                send.assert_not_called()
+
+    def test_return_to_cancelled_destination_creates_new_generation_once(self):
+        original = self.student.email
+        first = self.schedule()
+        self.student.email = "corrected@example.invalid"
+        self.student.save()
+        corrected = self.schedule()
+        first.refresh_from_db()
+        self.assertEqual(first.status, "superseded")
+        self.student.email = original
+        self.student.save()
+        returned = self.schedule()
+        self.assertNotEqual(returned.pk, first.pk)
+        self.assertNotEqual(returned.pk, corrected.pk)
+        self.assertEqual(returned.recipient, original)
+        self.assertEqual(returned.status, "queued")
+        self.assertEqual(self.schedule().pk, returned.pk)
+        self.assertLessEqual(len(returned.idempotency_key), 100)
+        corrected.refresh_from_db()
+        self.assertEqual(corrected.status, "superseded")
+        first.refresh_from_db()
+        self.assertEqual(first.status, "superseded")
+
+    def test_uncertain_existing_delivery_is_reused_without_silent_resend(self):
+        email = self.schedule()
+        ScriptEmail.objects.filter(pk=email.pk).update(
+            idempotency_key=f"submission-{self.submission.pk}-v{self.submission.version}",
+            status="failed",
+            failure_reason="delivery_unknown",
+        )
+        self.assertEqual(self.schedule().pk, email.pk)
+        with self.assertRaises(ValidationError):
+            retry_email(email.pk)
+        self.assertEqual(ScriptEmail.objects.count(), 1)
+
+    def test_return_to_cancelled_uncertain_destination_requires_manual_review(self):
+        original = self.student.email
+        email = self.schedule()
+        ScriptEmail.objects.filter(pk=email.pk).update(
+            status="failed", failure_reason="delivery_unknown"
+        )
+        self.student.email = "corrected@example.invalid"
+        self.student.save()
+        self.schedule()
+        self.student.email = original
+        self.student.save()
+        with self.assertRaises(ValidationError):
+            self.schedule()
+        self.assertEqual(ScriptEmail.objects.count(), 2)
+
     def test_missing_recipient_is_recorded_and_corrected_address_is_used_on_retry(self):
         self.student.email = ""
         self.student.save()

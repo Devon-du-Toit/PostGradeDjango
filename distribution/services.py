@@ -99,11 +99,37 @@ def schedule_script_email(
                         "Resolve QR page review before emailing the script."
                     )
             recipient = submission.enrollment.student.email
-            contact_key = sha256(recipient.encode("utf-8")).hexdigest()
-            key = f"submission-{submission.pk}-v{submission.version}-to-{contact_key}"
-            existing = ScriptEmail.objects.filter(idempotency_key=key).first()
+            matching = ScriptEmail.objects.filter(
+                submission=submission,
+                submission_version=submission.version,
+                enrollment_id=submission.enrollment_id,
+                recipient=recipient,
+            )
+            # Match the immutable target/version, not the key spelling: legacy
+            # sent, pending and uncertain rows must remain idempotent on upgrade.
+            available = matching.exclude(status=ScriptEmail.Status.SUPERSEDED)
+            existing = available.filter(status=ScriptEmail.Status.SENT).first()
+            if existing is None:
+                existing = available.order_by("pk").first()
             if existing is not None:
                 return existing
+            if matching.filter(
+                failure_reason=ScriptEmail.FailureReason.DELIVERY_UNKNOWN
+            ).exists():
+                raise ValidationError(
+                    "An earlier delivery to this address has an unknown outcome. Review the retained delivery record before requesting another send."
+                )
+            last_cancelled = (
+                matching.filter(status=ScriptEmail.Status.SUPERSEDED)
+                .order_by("-pk")
+                .first()
+            )
+            # 128 bits of SHA-256 plus numeric generation fit the existing
+            # 100-character key even for maximum bigint IDs/integer versions.
+            contact_key = sha256(recipient.encode("utf-8")).hexdigest()[:32]
+            key = f"submission-{submission.pk}-v{submission.version}-to-{contact_key}"
+            if last_cancelled is not None:
+                key += f"-g{last_cancelled.pk}"
             if not submission.file:
                 raise ValidationError("The script file is unavailable.")
             try:
