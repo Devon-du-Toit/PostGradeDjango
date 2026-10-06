@@ -1,0 +1,87 @@
+# The whole backend on one machine, production-like (DEBUG off, gunicorn,
+# JSON logs): PostgreSQL, the API and both workers from one image
+# (built once, tagged postgrade-backend:local, shared by all four services).
+#   docker compose up --build
+# Needs SECRET_KEY in .env (docker compose reads it for ${...} below).
+# API: http://localhost:8000/api/   Health: http://localhost:8000/health/ready/
+
+x-app-environment: &app-environment
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+  DEBUG: "False"
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CORS_ALLOWED_ORIGINS: http://localhost:5173
+  DB_NAME: postgrade
+  DB_USER: postgrade
+  DB_PASSWORD: postgrade-local-only
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_CONN_MAX_AGE: "60"
+  RESULT_EMAIL_RELEASE_POLICY: ${RESULT_EMAIL_RELEASE_POLICY:-automatic}
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: postgrade
+      POSTGRES_USER: postgrade
+      POSTGRES_PASSWORD: postgrade-local-only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgrade -d postgrade"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Applies migrations once, before anything else starts.
+  migrate:
+    build: .
+    image: postgrade-backend:local
+    command: python manage.py migrate --noinput
+    environment: *app-environment
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: .
+    image: postgrade-backend:local
+    environment: *app-environment
+    ports:
+      - "8000:8000"
+    volumes:
+      - media:/data/media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OCR needs ~1.8 GB per worker; run more copies with
+  #   docker compose up --scale recognition-worker=2
+  recognition-worker:
+    build: .
+    image: postgrade-backend:local
+    command: python manage.py run_recognition_worker
+    environment: *app-environment
+    volumes:
+      - media:/data/media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mail-worker:
+    build: .
+    image: postgrade-backend:local
+    command: python manage.py run_mail_worker
+    environment: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  media:
