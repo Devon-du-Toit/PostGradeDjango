@@ -23,7 +23,7 @@ class AssessmentScriptExportView(APIView):
             Assessment.objects.active(), pk=pk, course__owner=request.user
         )
         try:
-            archive = build_script_archive(assessment.submissions.all())
+            archive = build_script_archive(assessment.submissions.active())
         except OSError:
             logger.exception("Could not build script archive for assessment %s", pk)
             return Response(
