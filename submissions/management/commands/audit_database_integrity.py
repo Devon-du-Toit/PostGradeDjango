@@ -1,11 +1,12 @@
 import json
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import connection
 from django.db.models import Count, F, Q
 
 from distribution.models import ScriptEmail
 from students.models import Enrollment
-from submissions.models import Submission
+from submissions.models import ScriptPage, Submission
 
 
 class Command(BaseCommand):
@@ -45,9 +46,56 @@ class Command(BaseCommand):
             .filter(Q(submission__isnull=True) | Q(enrollment__isnull=True))
             .count(),
         }
+        qr_available = (
+            ScriptPage._meta.db_table in connection.introspection.table_names()
+        )
+        report["qr_schema_available"] = qr_available
+        report["invalid_qr_page_scopes"] = (
+            ScriptPage.objects.exclude(
+                upload__assessment_id=F("submission__assessment_id")
+            ).count()
+            if qr_available
+            else None
+        )
+        report["invalid_qr_page_enrollments"] = (
+            ScriptPage.objects.filter(
+                (
+                    Q(suggested_enrollment__isnull=False)
+                    & ~Q(
+                        suggested_enrollment__course_id=F(
+                            "submission__assessment__course_id"
+                        )
+                    )
+                )
+                | (
+                    Q(linked_enrollment__isnull=False)
+                    & ~Q(
+                        linked_enrollment__course_id=F(
+                            "submission__assessment__course_id"
+                        )
+                    )
+                )
+            ).count()
+            if qr_available
+            else None
+        )
+        report["invalid_qr_page_links"] = (
+            ScriptPage.objects.filter(linked_enrollment__isnull=False)
+            .filter(
+                Q(submission__enrollment__isnull=True)
+                | ~Q(linked_enrollment_id=F("submission__enrollment_id"))
+            )
+            .count()
+            if qr_available
+            else None
+        )
         self.stdout.write(json.dumps(report, sort_keys=True))
         if options["fail_on_invalid"] and (
-            report["invalid_enrollment_owners"] or report["invalid_submission_scopes"]
+            report["invalid_enrollment_owners"]
+            or report["invalid_submission_scopes"]
+            or report["invalid_qr_page_scopes"]
+            or report["invalid_qr_page_enrollments"]
+            or report["invalid_qr_page_links"]
         ):
             raise CommandError(
                 "Invalid membership records found; inspect before release. Nothing was changed."

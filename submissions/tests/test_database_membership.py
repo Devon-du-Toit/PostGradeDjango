@@ -7,6 +7,7 @@ from threading import Event
 import psycopg
 from django.conf import settings
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db.models.deletion import ProtectedError
 from django.test import TransactionTestCase
 
 from accounts.models import User
@@ -121,6 +122,11 @@ class DatabaseMembershipTests(TransactionTestCase):
             self.assertEqual(cursor.fetchone(), (self.course.pk, self.student.pk))
 
     def test_nullable_enrollment_and_deletion_are_preserved(self):
+        # History policy protects a referenced membership. Clearing an optional
+        # link still derives a null identity key; truly unreferenced deletion works.
+        with self.assertRaises(ProtectedError), transaction.atomic():
+            self.enrollment.delete()
+        Submission.objects.filter(pk=self.submission.pk).update(enrollment=None)
         self.enrollment.delete()
         self.submission.refresh_from_db()
         self.assertIsNone(self.submission.enrollment_id)
@@ -130,8 +136,9 @@ class DatabaseMembershipTests(TransactionTestCase):
                 [self.submission.pk],
             )
             self.assertIsNone(cursor.fetchone()[0])
-        self.owner.delete()
-        self.assertFalse(Submission.objects.filter(pk=self.submission.pk).exists())
+        with self.assertRaises(ProtectedError), transaction.atomic():
+            self.owner.delete()
+        self.assertTrue(Submission.objects.filter(pk=self.submission.pk).exists())
 
     def sql_connection(self):
         database = settings.DATABASES["default"]
@@ -159,7 +166,7 @@ class DatabaseMembershipTests(TransactionTestCase):
                 started.set()
                 try:
                     conn.execute(
-                        "INSERT INTO students_enrollment (course_id, student_id, created_at) VALUES (%s,%s,NOW())",
+                        "INSERT INTO students_enrollment (course_id, student_id, created_at, withdrawal_reason, version) VALUES (%s,%s,NOW(),'',0)",
                         [self.course.pk, self.student.pk],
                     )
                     conn.commit()
@@ -200,7 +207,7 @@ class DatabaseMembershipTests(TransactionTestCase):
 
         with self.sql_connection() as child, ThreadPoolExecutor(max_workers=1) as pool:
             child.execute(
-                "INSERT INTO students_enrollment (course_id, student_id, created_at) VALUES (%s,%s,NOW())",
+                "INSERT INTO students_enrollment (course_id, student_id, created_at, withdrawal_reason, version) VALUES (%s,%s,NOW(),'',0)",
                 [self.course.pk, self.student.pk],
             )
             future = pool.submit(change_parent)
@@ -214,8 +221,8 @@ class DatabaseMembershipTests(TransactionTestCase):
         self.submission.delete()
         insert = """INSERT INTO submissions_submission
             (assessment_id,enrollment_id,file,original_filename,status,
-             recognition_method,version,created_at,updated_at)
-            VALUES (%s,%s,'synthetic.pdf','synthetic.pdf','uploaded','ocr',0,NOW(),NOW())"""
+             recognition_method,version,created_at,updated_at,qr_group_key,qr_metadata,qr_review_issues)
+            VALUES (%s,%s,'synthetic.pdf','synthetic.pdf','uploaded','ocr',0,NOW(),NOW(),'','{}','[]')"""
         for table, row_id in (
             ("assessments_assessment", self.assessment.pk),
             ("students_enrollment", self.enrollment.pk),
@@ -257,7 +264,7 @@ class DatabaseMembershipTests(TransactionTestCase):
 
     def test_migration_reverses_and_rejects_existing_invalid_data(self):
         migration = import_module(
-            "submissions.migrations.0015_database_membership_constraints"
+            "submissions.migrations.0017_database_membership_constraints"
         )
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute(migration.REVERSE)
@@ -292,7 +299,7 @@ class DatabaseMembershipTests(TransactionTestCase):
                 started.set()
                 try:
                     conn.execute(
-                        "INSERT INTO students_enrollment (course_id,student_id,created_at) VALUES (%s,%s,NOW())",
+                        "INSERT INTO students_enrollment (course_id,student_id,created_at,withdrawal_reason,version) VALUES (%s,%s,NOW(),'',0)",
                         [self.course.pk, self.student.pk],
                     )
                     conn.commit()
@@ -332,8 +339,8 @@ class DatabaseMembershipTests(TransactionTestCase):
         with self.sql_connection() as child, ThreadPoolExecutor(max_workers=1) as pool:
             child.execute(
                 """INSERT INTO submissions_submission
-                (assessment_id,enrollment_id,file,original_filename,status,recognition_method,version,created_at,updated_at)
-                VALUES (%s,%s,'synthetic.pdf','synthetic.pdf','uploaded','ocr',0,NOW(),NOW())""",
+                (assessment_id,enrollment_id,file,original_filename,status,recognition_method,version,created_at,updated_at,qr_group_key,qr_metadata,qr_review_issues)
+                VALUES (%s,%s,'synthetic.pdf','synthetic.pdf','uploaded','ocr',0,NOW(),NOW(),'','{}','[]')""",
                 [self.assessment.pk, self.enrollment.pk],
             )
             future = pool.submit(switch_identity)

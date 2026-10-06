@@ -10,7 +10,7 @@ New audit entries snapshot enrollment ID, student ID, student number and course 
 
 Run `python manage.py audit_database_integrity --fail-on-invalid` before release. It reports invalid enrollment owners and submission scopes, verified scripts without enrollment, duplicate script groups and unsent orphan mail. Only invalid owner/scope counts make the strict command fail; orphan/duplicate counts are review items, not silently repaired. The command is read-only and contains no student names or numbers in output.
 
-`bulk_create`, QuerySet.update and raw SQL bypass model methods. Migration `submissions.0015_database_membership_constraints` now uses derived database keys and composite foreign keys to enforce enrollment owners and submission course membership even for those writes. It blocks migration on existing mismatches without silently repairing them. See [DATABASE_MEMBERSHIP_CONSTRAINTS.md](DATABASE_MEMBERSHIP_CONSTRAINTS.md) for locking, explicit repair, rollback and PostgreSQL concurrency tests. Model clean/save still does not enforce unrelated workflow/audit rules for arbitrary SQL.
+`bulk_create`, QuerySet.update and raw SQL bypass model methods. Migration `submissions.0017_database_membership_constraints` now uses derived database keys and composite foreign keys to enforce enrollment owners, submission course/student membership and QR page/source/link consistency even for those writes. It blocks migration on existing mismatches without silently repairing them. See [DATABASE_MEMBERSHIP_CONSTRAINTS.md](DATABASE_MEMBERSHIP_CONSTRAINTS.md) for locking, explicit repair, rollback and PostgreSQL concurrency tests. Model clean/save still does not enforce unrelated workflow/audit rules for arbitrary SQL.
 
 ## Foreign-key deletion and duplicate policy
 
