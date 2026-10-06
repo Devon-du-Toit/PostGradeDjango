@@ -11,9 +11,14 @@ import pymupdf
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 
 from submissions.models import ScriptPage, ScriptUpload, Submission, SubmissionAudit
+
+
+class GroupFileTooLarge(APIException):
+    status_code = 413
+    default_detail = "QR group exceeds the assembled script byte budget. Split or review the batch before uploading."
 
 
 def label_order(label):
@@ -175,15 +180,21 @@ def rebuild_script(submission, created_files):
         submission.qr_review_issues = group_issues(submission)
         submission.save(update_fields=["file", "qr_review_issues"])
         return
+    byte_limit = getattr(settings, "MAX_QR_GROUP_BYTES", 15 * 1024 * 1024)
+    if sum(page.file.size for page in pages) > byte_limit:
+        raise GroupFileTooLarge()
     with pymupdf.open() as document:
         for page in pages:
             with page.file.open("rb") as stored:
                 content = stored.read()
             with pymupdf.open(stream=content, filetype="pdf") as original:
                 document.insert_pdf(original)
+        canonical = document.tobytes()
+        if len(canonical) > byte_limit:
+            raise GroupFileTooLarge()
         submission.file.save(
             "group-" + uuid.uuid4().hex + ".pdf",
-            ContentFile(document.tobytes()),
+            ContentFile(canonical),
             save=False,
         )
         created_files.append((submission.file.storage, submission.file.name))

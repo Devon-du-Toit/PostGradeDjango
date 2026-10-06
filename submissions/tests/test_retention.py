@@ -374,6 +374,43 @@ class RetentionTests(RetentionFixtures, TemporaryMediaMixin, TestCase):
                     self.assertEqual(response.status_code, 400)
         self.assertIsNone(Student.objects.get(pk=self.student.pk).archived_at)
 
+    def test_group_byte_limit_rolls_back_late_intake_without_changing_original(self):
+        from pathlib import Path
+
+        from django.test import override_settings
+
+        from submissions.qr import GroupFileTooLarge
+
+        self.assessment.expected_qr_page_labels = ["P1", "P3"]
+        self.assessment.save()
+        script = create_submission(
+            dict(
+                assessment=self.assessment,
+                file=paper([qr("P1")]),
+                recognition_method="bubble",
+            ),
+            self.user,
+        )
+        before = set(Path(self.media_root).rglob("*.pdf"))
+        version, name = script.version, script.file.name
+        with (
+            override_settings(MAX_QR_GROUP_BYTES=1),
+            self.assertRaises(GroupFileTooLarge),
+        ):
+            create_submission(
+                dict(
+                    assessment=self.assessment,
+                    file=paper([qr("P3")]),
+                    recognition_method="bubble",
+                ),
+                self.user,
+            )
+        script.refresh_from_db()
+        self.assertEqual(script.version, version)
+        self.assertEqual(script.file.name, name)
+        self.assertEqual(script.pages.count(), 1)
+        self.assertEqual(set(Path(self.media_root).rglob("*.pdf")), before)
+
 
 class RetentionConcurrencyTests(
     RetentionFixtures, TemporaryMediaMixin, TransactionTestCase
