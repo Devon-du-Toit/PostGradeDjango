@@ -77,7 +77,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=729163)
     parser.add_argument("--count", type=int, default=64)
+    parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     if args.count < 1:
         parser.error("--count must be positive")
-    print(json.dumps(evaluate(args.seed, args.count), indent=2))
+    metrics = evaluate(args.seed, args.count)
+    print(json.dumps(metrics, indent=2))
+    if args.check and (
+        metrics["exact"] != args.count
+        or metrics["false_clear_readings"]
+        or metrics["unsafe_clear_readings_on_ambiguous"]
+    ):
+        raise SystemExit("Bubble regression metrics failed")

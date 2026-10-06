@@ -26,7 +26,9 @@ Runs the **entire test suite** (`python manage.py test`), including the tests th
 
 ## Model / runtime setup
 
-The integration job requires Python 3.12, paddleocr==3.7.0, paddlepaddle==3.3.1, opencv-contrib-python, opencv-python-headless, and PaddleOCR models (~140 MB at ~/.paddlex).
+The integration job requires Python 3.12, paddleocr==3.7.0, paddlepaddle==3.3.1, paddlex==3.7.2, numpy==2.3.5, the single opencv-contrib-python==4.10.0.84 distribution, and PaddleOCR models (~140 MB at ~/.paddlex). PaddleX's ocr-core extra requires this exact OpenCV wheel. Do not install another cv2 distribution alongside it.
+
+Both test jobs run `python -m pip check` and `python tools/check_recognition_runtime.py` after installation. Docker runs the same checks before initializing its OCR models. The runtime check rejects missing, conflicting or unexpected OpenCV wheels and exercises NumPy/OpenCV PNG and contour operations to detect ABI/import failures. See [RECOGNITION_RUNTIME.md](RECOGNITION_RUNTIME.md) for clean installation and validation.
 
 Models are cached under the key paddlex-models-v1. Bump the key if the model version changes.
 

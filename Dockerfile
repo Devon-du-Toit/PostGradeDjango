@@ -17,7 +17,10 @@ WORKDIR /app
 
 # Dependencies before the code, so a code change reuses this (large) layer.
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY tools/check_recognition_runtime.py /tmp/check_recognition_runtime.py
+RUN pip install -r requirements.txt \
+    && pip check \
+    && python /tmp/check_recognition_runtime.py
 
 RUN mkdir -p /data/media && chown app:app /data/media
 
