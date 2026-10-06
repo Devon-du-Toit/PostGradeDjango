@@ -461,3 +461,8 @@ Use **synthetic** scripts and class lists only: invented names and student numbe
 ## Script-only rollout
 
 This release removes numeric grading. Before applying its migrations, stop writes/workers and back up the database/media; deploy the matching Vue version. See [MARKS_REMOVAL.md](MARKS_REMOVAL.md). Snapshot attachments require shared persistent private storage for web and mail workers.
+
+
+## Account lifecycle rollout (#8)
+
+Deploy the matching Vue auth PR before enabling backend refresh rotation. Run migrations (blacklist tables and shared throttle cache), then restart web workers. Existing password-unbound JWT sessions require a fresh sign-in. Set ALLOW_REGISTRATION explicitly if production should offer public signup; it otherwise defaults to DEBUG. Read [PERMISSIONS.md](PERMISSIONS.md) for the endpoint matrix and proxy assumptions. Schedule `python manage.py flushexpiredtokens` daily. API throttle limits do not protect Django admin or guarantee strict limits under concurrency: configure perimeter rate limiting for auth and `/admin/login/`. Staff password resets invalidate old access/refresh sessions; role labels alone never grant staff or cross-owner API access.

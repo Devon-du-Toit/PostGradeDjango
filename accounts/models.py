@@ -57,3 +57,13 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class AuthThrottleCache(models.Model):
+    # Django DatabaseCache's schema, created by migrations on every deployment.
+    cache_key = models.CharField(max_length=255, primary_key=True)
+    value = models.TextField()
+    expires = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = "auth_throttle_cache"
