@@ -52,19 +52,90 @@ class CSVImportTests(APITestCase):
         )
 
     def test_import_passes_request_context_to_serializer(self):
+        existing = Student.objects.create(
+            owner=self.user,
+            student_number="001",
+            first_name="Ann",
+            last_name="Lee",
+            email="ann@x.com",
+        )
+        calls = []
+        real_validator = StudentSerializer.validate_student_number
+
         def validate_student_number(serializer, value):
-            serializer.context["request"]  # KeyError if no context was passed
-            return value
+            calls.append(
+                (serializer.context["request"].user.pk, serializer.instance)
+            )
+            return real_validator(serializer, value)
 
         with patch.object(
             StudentSerializer,
             "validate_student_number",
             validate_student_number,
-            create=True,
         ):
-            r = self.upload(HEADER + "001,Ann,Lee,ann@x.com\n")
+            r = self.upload(
+                HEADER + "001,Anna,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n",
+                update_existing="true",
+            )
 
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(calls, [(self.user.pk, existing), (self.user.pk, None)])
+        existing.refresh_from_db()
+        self.assertEqual(existing.first_name, "Anna")
+        self.assertEqual(r.data["summary"]["created"], 1)
+        self.assertEqual(r.data["summary"]["updated"], 1)
+        self.assertEqual(Enrollment.objects.filter(course=self.course).count(), 2)
+
+    def test_invalid_row_prevents_existing_updates_and_new_students(self):
+        existing = Student.objects.create(
+            owner=self.user,
+            student_number="001",
+            first_name="Ann",
+            last_name="Lee",
+            email="ann@x.com",
+        )
+        response = self.upload(
+            HEADER
+            + "001,Anna,Lee,ann@x.com\n"
+            + "002,Bob,Ray,bob@x.com\n"
+            + "003,Chris,Ray,invalid-email\n",
+            update_existing="true",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        existing.refresh_from_db()
+        self.assertEqual(existing.first_name, "Ann")
+        self.assertEqual(Student.objects.count(), 1)
+        self.assertEqual(Enrollment.objects.count(), 0)
+        self.assertEqual(response.data["summary"]["total"], 3)
+        self.assertEqual(response.data["summary"]["failed"], 1)
+        error = response.data["errors"][0]
+        self.assertEqual(error["row"], 4)
+        self.assertEqual(error["student_number"], "003")
+        self.assertIn("email", error["message"])
+
+    def test_dry_run_does_not_update_existing_or_create_new_students(self):
+        existing = Student.objects.create(
+            owner=self.user,
+            student_number="001",
+            first_name="Ann",
+            last_name="Lee",
+            email="ann@x.com",
+        )
+        response = self.upload(
+            HEADER + "001,Anna,Lee,ann@x.com\n002,Bob,Ray,bob@x.com\n",
+            update_existing="true",
+            dry_run="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["dry_run"])
+        self.assertEqual(response.data["summary"]["created"], 1)
+        self.assertEqual(response.data["summary"]["updated"], 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.first_name, "Ann")
+        self.assertEqual(Student.objects.count(), 1)
+        self.assertEqual(Enrollment.objects.count(), 0)
 
     # ---- criterion 1: parsing ----
 

@@ -1,0 +1,16 @@
+# Keep secrets, local data and build noise out of the image.
+.env
+.env.*
+!.env.example
+.git
+.github
+.venv
+venv
+media
+staticfiles
+**/__pycache__
+**/*.pyc
+.idea
+.vscode
+*.log
+student_number_region_debug.jpeg

@@ -20,3 +20,29 @@ class CourseSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate(self, attrs):
+        # The owner comes from the request, so DRF cannot enforce
+        # unique_course_per_owner_period on its own; without this check a
+        # duplicate reaches the database and the request fails with a 500.
+        request = self.context["request"]
+        period = {
+            field: attrs.get(field, getattr(self.instance, field, None))
+            for field in ("code", "year", "semester")
+        }
+
+        duplicates = Course.objects.filter(owner=request.user, **period)
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+
+        if duplicates.exists():
+            raise serializers.ValidationError(
+                {
+                    "code": (
+                        "You already have a course with this code "
+                        "for that year and semester."
+                    )
+                }
+            )
+
+        return attrs
