@@ -3,10 +3,17 @@
 from concurrent.futures import ThreadPoolExecutor
 from importlib import import_module
 from threading import Event
+from unittest.mock import patch
 
 import psycopg
 from django.conf import settings
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import (
+    DatabaseError,
+    IntegrityError,
+    close_old_connections,
+    connection,
+    transaction,
+)
 from django.db.models.deletion import ProtectedError
 from django.test import TransactionTestCase
 
@@ -14,7 +21,7 @@ from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
 from students.models import Enrollment, Student
-from submissions.models import Submission
+from submissions.models import RecognitionJob, Submission
 
 
 class DatabaseMembershipTests(TransactionTestCase):
@@ -347,3 +354,58 @@ class DatabaseMembershipTests(TransactionTestCase):
             self.assertTrue(started.wait(2))
             child.commit()
             self.assertEqual(future.result(timeout=6), "rejected")
+
+    def test_parent_archive_and_worker_finish_preserve_lock_order(self):
+        from courses.lifecycle import stop_archived_work
+        from submissions.jobs import finish_job
+
+        for model, parent_id in (
+            (Assessment, self.assessment.pk),
+            (Course, self.course.pk),
+        ):
+            with self.subTest(parent=model.__name__):
+                Submission.objects.filter(pk=self.submission.pk).update(
+                    status="processing", enrollment=None
+                )
+                job = RecognitionJob.objects.create(
+                    submission=self.submission, status="running", attempts=1
+                )
+                parent_locked = Event()
+
+                def archive_parent():
+                    close_old_connections()
+                    try:
+                        with connection.cursor() as cursor:
+                            cursor.execute("SET lock_timeout = '4s'")
+                            cursor.execute("SET statement_timeout = '5s'")
+                        model.objects.get(pk=parent_id).archive()
+                    finally:
+                        connection.close()
+
+                def announce_parent_lock(**scope):
+                    parent_locked.set()
+                    return stop_archived_work(**scope)
+
+                with (
+                    patch(
+                        "courses.lifecycle.stop_archived_work",
+                        side_effect=announce_parent_lock,
+                    ),
+                    ThreadPoolExecutor(max_workers=1) as pool,
+                ):
+                    with transaction.atomic():
+                        with connection.cursor() as cursor:
+                            cursor.execute("SET LOCAL lock_timeout = '4s'")
+                            cursor.execute("SET LOCAL statement_timeout = '5s'")
+                        RecognitionJob.objects.select_for_update().get(pk=job.pk)
+                        future = pool.submit(archive_parent)
+                        self.assertTrue(parent_locked.wait(2))
+                        # Archive owns the parent row and waits on this job.
+                        # Completing an unchanged scope must not request a
+                        # conflicting parent lock through the new composite FK.
+                        finish_job(job.pk, 1, self.enrollment)
+                    future.result(timeout=6)
+                self.assertFalse(
+                    Submission.objects.active().filter(pk=self.submission.pk).exists()
+                )
+                model.objects.filter(pk=parent_id).update(archived_at=None)

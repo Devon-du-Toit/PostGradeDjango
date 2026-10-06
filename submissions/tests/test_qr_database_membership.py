@@ -276,4 +276,3 @@ class QRDatabaseMembershipTests(TransactionTestCase):
                         f"UPDATE {table} SET assessment_id=%s WHERE id=%s",
                         [self.assessment.pk, row_id],
                     )
-

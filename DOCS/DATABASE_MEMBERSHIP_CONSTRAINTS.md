@@ -36,6 +36,8 @@ Reverse to the preceding `submissions.0016_submissionfilerevision_and_more` only
 
 `submissions.tests.test_database_membership` uses real PostgreSQL statements and transactions. It covers incompatible bulk inserts, parent/child queryset reassignments (including same-owner student identity replacement), hidden-key spoof attempts, nullable enrollment/deletion, both enrollment/owner race orderings, concurrent student-owner reassignment, concurrent assessment/enrollment movement versus script insertion, concurrent student identity switching, migration reversal and fail-closed preflight. The concurrent cases have bounded statement/lock timeouts and require a foreign-key rejection rather than accepting either a deadlock or a successful invalid write.
 
+A workflow lock-order regression holds a running job while a competing assessment/course archive owns its parent row and waits on that job. Worker completion and archive must both finish under bounded timeouts with the script hidden by its archived parent; it exercises the new foreign keys alongside existing application lock ordering.
+
 The read-only audit regression deliberately defers one named constraint within its test transaction, detects intermediate bad data, removes that synthetic record and restores immediate checking. No invalid row commits.
 
 `submissions.tests.test_qr_database_membership` covers cross-assessment/source and enrollment violations through bulk/queryset/raw SQL, parent reassignment, hidden-key spoof attempts, both linked-identity update orderings, bad-commit rejection, populated QR preflight and read-only audit failures, pre-QR schema reporting and concurrent parent/source moves against page insertion.
