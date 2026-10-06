@@ -1,0 +1,14 @@
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Django bootstrap must precede ORM imports in this standalone review tool.
+"tools/database_review.py" = ["E402"]

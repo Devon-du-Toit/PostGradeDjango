@@ -1,26 +1,24 @@
+from django.core.exceptions import ValidationError
+from django.http import FileResponse, Http404
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from students.models import Enrollment
 from submissions.filters import (
     SUBMISSION_SEARCH_FIELDS,
     VERIFICATION_QUEUE_STATUSES,
     SubmissionFilter,
     VerificationQueueFilter,
 )
+from submissions.jobs import retry_recognition
 from submissions.models import Submission
 from submissions.serializers import (
+    SubmissionRetrySerializer,
     SubmissionSerializer,
     SubmissionTransitionSerializer,
-    SubmissionRetrySerializer,
 )
-
-from django.core.exceptions import ValidationError
-from django.http import FileResponse, Http404
-
-from students.models import Enrollment
-from submissions.jobs import retry_recognition
 from submissions.verification import verify_submission
 
 

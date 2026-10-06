@@ -1,13 +1,14 @@
-from django.test import TestCase
-from django.core import mail
 from django.contrib.auth import get_user_model
+from django.core import mail
+from django.test import TestCase
+
 from students.models import Student
 from submissions.emailing import send_student_email
 
 User = get_user_model()
 
 
-class StudentEmailTests(TestCase):
+class StudentNoticeEmailTests(TestCase):
     def setUp(self):
         user = User.objects.create_user(email="lecturer@example.invalid")
         self.student = Student.objects.create(

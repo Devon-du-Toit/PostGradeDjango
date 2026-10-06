@@ -1,12 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from students.models import Student
-
-from django.urls import reverse
-
 
 User = get_user_model()
 

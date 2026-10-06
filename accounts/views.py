@@ -1,22 +1,22 @@
 from django.conf import settings
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import (
+    TokenBlacklistView,
     TokenObtainPairView,
     TokenRefreshView,
-    TokenBlacklistView,
 )
-from .throttles import LoginThrottle, RegisterThrottle, RefreshThrottle, LogoutThrottle
-from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .serializers import (
+    AccountLogoutSerializer,
+    AccountRefreshSerializer,
     RegisterSerializer,
     UserSerializer,
-    AccountRefreshSerializer,
-    AccountLogoutSerializer,
 )
+from .throttles import LoginThrottle, LogoutThrottle, RefreshThrottle, RegisterThrottle
 
 
 class RegisterView(generics.CreateAPIView):

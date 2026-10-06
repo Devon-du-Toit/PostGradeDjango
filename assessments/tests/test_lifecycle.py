@@ -1,6 +1,3 @@
-from decimal import Decimal
-from unittest.mock import patch
-
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -12,13 +9,16 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
-from students.models import Enrollment, Student
-from submissions.models import Submission
-from submissions.models import RecognitionAttempt, RecognitionJob, SubmissionAudit
-from submissions.tests.helpers import TemporaryMediaMixin, make_pdf, make_png
-from submissions import jobs
-from distribution import dispatch
 from students.csv_import import CSVFileError, apply_import_plan, build_import_plan
+from students.models import Enrollment, Student
+from submissions import jobs
+from submissions.models import (
+    RecognitionAttempt,
+    RecognitionJob,
+    Submission,
+    SubmissionAudit,
+)
+from submissions.tests.helpers import TemporaryMediaMixin, make_pdf, make_png
 
 
 def listed_ids(response):

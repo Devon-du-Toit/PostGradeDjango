@@ -48,10 +48,7 @@ def locate_student_number(image_path):
         ):
             normalized = text.lower()
 
-            if (
-                "student number" in normalized
-                or "studentenommer" in normalized
-            ):
+            if "student number" in normalized or "studentenommer" in normalized:
                 with Image.open(image_path) as image:
                     image_width, image_height = image.size
 

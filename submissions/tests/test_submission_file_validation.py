@@ -52,9 +52,7 @@ class SubmissionFileValidationUnitTests(TestCase):
     """
 
     def _assert_rejected(self, uploaded_file, message_fragment=None):
-        with self.assertRaises(
-            SubmissionFileValidationError
-        ) as ctx:
+        with self.assertRaises(SubmissionFileValidationError) as ctx:
             validate_submission_file(uploaded_file)
 
         if message_fragment is not None:
@@ -288,8 +286,6 @@ class SubmissionFileValidationAPITests(TestCase):
         self.assessment = Assessment.objects.create(
             course=self.course,
             name="Test 1",
-
-
         )
 
         self.client.force_authenticate(user=self.user)
@@ -343,9 +339,7 @@ class SubmissionFileValidationAPITests(TestCase):
         self.assertFalse(Submission.objects.exists())
 
     def test_rejected_upload_response_does_not_echo_file_bytes(self):
-        secret_looking_bytes = (
-            b"CONFIDENTIAL STUDENT ANSWER: not a real pdf"
-        )
+        secret_looking_bytes = b"CONFIDENTIAL STUDENT ANSWER: not a real pdf"
         uploaded_file = SimpleUploadedFile(
             "student-paper.pdf",
             secret_looking_bytes,

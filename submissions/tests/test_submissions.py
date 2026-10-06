@@ -1,21 +1,18 @@
+from unittest.mock import patch
+
 import pymupdf
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
-from unittest.mock import patch
 
 from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
-from distribution.dispatch import process_next_email
 from students.models import Enrollment, Student
-from submissions.models import Submission
 from submissions.jobs import process_next_job
-from submissions.models import RecognitionJob
+from submissions.models import RecognitionJob, Submission
 from submissions.recognition.types import RecognitionResult
-
-from django.core import mail
 
 
 def make_valid_pdf_bytes():

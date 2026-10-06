@@ -44,8 +44,6 @@ class RecognitionEvidenceTestMixin(TemporaryMediaMixin):
         assessment = Assessment.objects.create(
             course=course,
             name="Test 1",
-
-
         )
 
         self.submission = Submission.objects.create(
@@ -85,9 +83,7 @@ class RecognitionEvidenceOwnerIsolationTests(
     def test_owner_sees_recognition_evidence(self):
         self.client.force_authenticate(user=self.owner)
 
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
@@ -98,9 +94,7 @@ class RecognitionEvidenceOwnerIsolationTests(
     def test_other_user_cannot_view_submission_evidence(self):
         self.client.force_authenticate(user=self.other_user)
 
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/")
 
         self.assertEqual(
             response.status_code,
@@ -118,9 +112,7 @@ class RecognitionEvidenceOwnerIsolationTests(
     def test_other_user_verification_queue_excludes_evidence(self):
         self.client.force_authenticate(user=self.other_user)
 
-        response = self.client.get(
-            "/api/submissions/verification-queue/"
-        )
+        response = self.client.get("/api/submissions/verification-queue/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 0)
@@ -176,9 +168,7 @@ class RecognitionEvidenceFieldTests(
         self.client.force_authenticate(user=self.owner)
 
     def test_all_candidates_are_exposed(self):
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/")
 
         self.assertEqual(
             response.data["recognition"]["raw_candidates"],
@@ -205,9 +195,7 @@ class RecognitionEvidenceFieldTests(
             error_message="C:\\secret\\media\\submissions\\test.pdf",
         )
 
-        response = self.client.get(
-            f"/api/submissions/{self.submission.id}/"
-        )
+        response = self.client.get(f"/api/submissions/{self.submission.id}/")
 
         recognition = response.data["recognition"]
 
@@ -252,9 +240,7 @@ class RegionImageCleanupTests(
 
         self.assertEqual(callbacks, [])
         self.assertTrue(os.path.exists(path))
-        self.assertTrue(
-            RecognitionAttempt.objects.filter(pk=self.attempt.pk).exists()
-        )
+        self.assertTrue(RecognitionAttempt.objects.filter(pk=self.attempt.pk).exists())
 
     def test_attempt_without_image_deletes_cleanly(self):
         self.attempt.region_image = ""

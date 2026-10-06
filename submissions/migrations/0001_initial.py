@@ -9,21 +9,45 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('assessments', '0002_alter_assessment_max_mark_result'),
-        ('students', '0003_enrollment'),
+        ("assessments", "0002_alter_assessment_max_mark_result"),
+        ("students", "0003_enrollment"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Submission',
+            name="Submission",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('file', models.FileField(upload_to='submissions/%Y/%m/%d/')),
-                ('original_filename', models.CharField(max_length=255)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('assessment', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='submissions', to='assessments.assessment')),
-                ('enrollment', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='submissions', to='students.enrollment')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("file", models.FileField(upload_to="submissions/%Y/%m/%d/")),
+                ("original_filename", models.CharField(max_length=255)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "assessment",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="submissions",
+                        to="assessments.assessment",
+                    ),
+                ),
+                (
+                    "enrollment",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="submissions",
+                        to="students.enrollment",
+                    ),
+                ),
             ],
         ),
     ]

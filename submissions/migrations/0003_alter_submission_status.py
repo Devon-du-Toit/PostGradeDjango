@@ -6,13 +6,23 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0002_submission_status'),
+        ("submissions", "0002_submission_status"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='submission',
-            name='status',
-            field=models.CharField(choices=[('uploaded', 'Uploaded'), ('matched', 'Matched'), ('needs_verification', 'Needs verification'), ('verified', 'Verified'), ('marked', 'Marked')], default='uploaded', max_length=20),
+            model_name="submission",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("uploaded", "Uploaded"),
+                    ("matched", "Matched"),
+                    ("needs_verification", "Needs verification"),
+                    ("verified", "Verified"),
+                    ("marked", "Marked"),
+                ],
+                default="uploaded",
+                max_length=20,
+            ),
         ),
     ]

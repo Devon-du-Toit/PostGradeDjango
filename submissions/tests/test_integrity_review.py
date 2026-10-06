@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -7,12 +8,13 @@ from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
+
 from accounts.models import User
-from courses.models import Course
 from assessments.models import Assessment
-from students.models import Student, Enrollment
-from submissions.models import Submission, SubmissionAudit, RecognitionJob
+from courses.models import Course
+from students.models import Enrollment, Student
 from submissions.jobs import finish_job
+from submissions.models import RecognitionJob, Submission
 
 
 class IntegrityReviewTests(TestCase):

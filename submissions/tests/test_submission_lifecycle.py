@@ -12,17 +12,16 @@ retention, and storage-backend behaviour for submission files.
   API instead, so it keeps working on non-filesystem backends.
 """
 
-import pymupdf
 import io
 import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
-from PIL import Image, ImageDraw
-
+import pymupdf
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from PIL import Image, ImageDraw
 from rest_framework import status
 from rest_framework.test import APIClient
 

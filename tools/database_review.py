@@ -61,6 +61,7 @@ def seed_legacy(media):
     Job = apps.get_model("submissions", "RecognitionJob")
     Audit = apps.get_model("submissions", "SubmissionAudit")
     from django.utils import timezone
+
     from submissions.tests.helpers import make_pdf, make_png
 
     media.mkdir(parents=True, exist_ok=False)
@@ -237,13 +238,15 @@ def manifest(media):
 
 
 def measure(media):
-    from accounts.models import User
-    from submissions.models import Submission, SubmissionAudit
-    from distribution.services import schedule_script_email
-    from distribution.models import ScriptEmail
-    from students.models import Student
     from io import StringIO
+
     from django.core.management import call_command
+
+    from accounts.models import User
+    from distribution.models import ScriptEmail
+    from distribution.services import schedule_script_email
+    from students.models import Student
+    from submissions.models import Submission, SubmissionAudit
 
     # Verify upgrade semantics before introducing a current snapshot delivery.
     assert (

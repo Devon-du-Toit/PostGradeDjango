@@ -1,9 +1,10 @@
 from django.db.models.signals import post_delete, pre_delete
 from django.dispatch import receiver
+
 from distribution.models import ScriptEmail
-from submissions.signals import delete_file_after_commit
-from submissions.models import Submission
 from distribution.services import supersede_submission_emails
+from submissions.models import Submission
+from submissions.signals import delete_file_after_commit
 
 
 @receiver(pre_delete, sender=Submission)

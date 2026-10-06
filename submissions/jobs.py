@@ -2,12 +2,12 @@ import logging
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError
-from django.http import Http404
 from django.db import IntegrityError, transaction
+from django.http import Http404
 from django.utils import timezone
 
-from submissions.models import RecognitionJob, Submission, SubmissionAudit
 from students.models import Enrollment
+from submissions.models import RecognitionJob, Submission
 from submissions.recognition.service import recognize_submission
 
 logger = logging.getLogger(__name__)

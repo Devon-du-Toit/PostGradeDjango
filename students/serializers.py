@@ -1,6 +1,8 @@
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
+
+from courses.lifecycle import lock_active_course
 from courses.models import Course
 from students.models import Enrollment, Student
 
@@ -113,9 +115,8 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         with transaction.atomic():
-            course = get_object_or_404(
-                Course.objects.active().select_for_update(),
-                pk=validated_data["course"].pk,
+            course = lock_active_course(
+                validated_data["course"].pk,
                 owner=self.context["request"].user,
             )
             student = get_object_or_404(

@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0005_submission_status_constraint'),
+        ("submissions", "0005_submission_status_constraint"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='submission',
-            name='version',
+            model_name="submission",
+            name="version",
             field=models.PositiveIntegerField(default=0),
         ),
     ]

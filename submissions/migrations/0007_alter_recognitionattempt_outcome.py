@@ -6,13 +6,23 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0006_merge_20260927_2131'),
+        ("submissions", "0006_merge_20260927_2131"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='recognitionattempt',
-            name='outcome',
-            field=models.CharField(choices=[('matched', 'Matched'), ('no_match', 'No match'), ('no_candidate', 'No candidate'), ('region_not_found', 'Region not found'), ('image_unusable', 'Image unusable'), ('error', 'Error')], max_length=20),
+            model_name="recognitionattempt",
+            name="outcome",
+            field=models.CharField(
+                choices=[
+                    ("matched", "Matched"),
+                    ("no_match", "No match"),
+                    ("no_candidate", "No candidate"),
+                    ("region_not_found", "Region not found"),
+                    ("image_unusable", "Image unusable"),
+                    ("error", "Error"),
+                ],
+                max_length=20,
+            ),
         ),
     ]

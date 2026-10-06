@@ -6,28 +6,69 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('assessments', '0003_result_version'),
-        ('students', '0003_enrollment'),
-        ('submissions', '0009_merge_20260927_2248'),
+        ("assessments", "0003_result_version"),
+        ("students", "0003_enrollment"),
+        ("submissions", "0009_merge_20260927_2248"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='submission',
-            name='submission_status_valid',
+            model_name="submission",
+            name="submission_status_valid",
         ),
         migrations.AlterField(
-            model_name='submissionaudit',
-            name='new_status',
-            field=models.CharField(choices=[('uploaded', 'Uploaded'), ('matched', 'Matched'), ('needs_verification', 'Needs verification'), ('verified', 'Verified'), ('marked', 'Marked'), ('processing', 'Processing'), ('recognition_failed', 'Recognition failed')], max_length=20),
+            model_name="submissionaudit",
+            name="new_status",
+            field=models.CharField(
+                choices=[
+                    ("uploaded", "Uploaded"),
+                    ("matched", "Matched"),
+                    ("needs_verification", "Needs verification"),
+                    ("verified", "Verified"),
+                    ("marked", "Marked"),
+                    ("processing", "Processing"),
+                    ("recognition_failed", "Recognition failed"),
+                ],
+                max_length=20,
+            ),
         ),
         migrations.AlterField(
-            model_name='submissionaudit',
-            name='previous_status',
-            field=models.CharField(blank=True, choices=[('uploaded', 'Uploaded'), ('matched', 'Matched'), ('needs_verification', 'Needs verification'), ('verified', 'Verified'), ('marked', 'Marked'), ('processing', 'Processing'), ('recognition_failed', 'Recognition failed')], help_text='Null on creation.', max_length=20, null=True),
+            model_name="submissionaudit",
+            name="previous_status",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("uploaded", "Uploaded"),
+                    ("matched", "Matched"),
+                    ("needs_verification", "Needs verification"),
+                    ("verified", "Verified"),
+                    ("marked", "Marked"),
+                    ("processing", "Processing"),
+                    ("recognition_failed", "Recognition failed"),
+                ],
+                help_text="Null on creation.",
+                max_length=20,
+                null=True,
+            ),
         ),
         migrations.AddConstraint(
-            model_name='submission',
-            constraint=models.CheckConstraint(condition=models.Q(('status__in', ['uploaded', 'matched', 'needs_verification', 'verified', 'marked', 'processing', 'recognition_failed'])), name='submission_status_valid'),
+            model_name="submission",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    (
+                        "status__in",
+                        [
+                            "uploaded",
+                            "matched",
+                            "needs_verification",
+                            "verified",
+                            "marked",
+                            "processing",
+                            "recognition_failed",
+                        ],
+                    )
+                ),
+                name="submission_status_valid",
+            ),
         ),
     ]

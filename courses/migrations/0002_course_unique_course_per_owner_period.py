@@ -7,13 +7,16 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('courses', '0001_initial'),
+        ("courses", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddConstraint(
-            model_name='course',
-            constraint=models.UniqueConstraint(fields=('owner', 'code', 'year', 'semester'), name='unique_course_per_owner_period'),
+            model_name="course",
+            constraint=models.UniqueConstraint(
+                fields=("owner", "code", "year", "semester"),
+                name="unique_course_per_owner_period",
+            ),
         ),
     ]

@@ -7,21 +7,47 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('courses', '0002_course_unique_course_per_owner_period'),
-        ('students', '0002_student_unique_student_number_per_owner'),
+        ("courses", "0002_course_unique_course_per_owner_period"),
+        ("students", "0002_student_unique_student_number_per_owner"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Enrollment',
+            name="Enrollment",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('course', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='enrollments', to='courses.course')),
-                ('student', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='enrollments', to='students.student')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "course",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="enrollments",
+                        to="courses.course",
+                    ),
+                ),
+                (
+                    "student",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="enrollments",
+                        to="students.student",
+                    ),
+                ),
             ],
             options={
-                'constraints': [models.UniqueConstraint(fields=('course', 'student'), name='unique_student_enrollment')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("course", "student"), name="unique_student_enrollment"
+                    )
+                ],
             },
         ),
     ]

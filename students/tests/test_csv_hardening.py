@@ -1,16 +1,17 @@
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from threading import Barrier
 from unittest.mock import patch
-from io import BytesIO
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import close_old_connections
 from django.test import TransactionTestCase
 from rest_framework.test import APITestCase
-from students.csv_import import CSVFileError, apply_import_plan, build_import_plan
-from students.models import Student, Enrollment
-from students.tests.test_csv_import import CSVImportTests, HEADER, make_course
+
 from accounts.models import User
+from students.csv_import import CSVFileError, apply_import_plan, build_import_plan
+from students.models import Enrollment, Student
+from students.tests.test_csv_import import HEADER, CSVImportTests, make_course
 
 
 class CSVHardeningTests(APITestCase):
@@ -25,7 +26,7 @@ class CSVHardeningTests(APITestCase):
             self.user,
             SimpleUploadedFile("class.csv", content.encode()),
             serializer_context=self.context,
-            **kwargs
+            **kwargs,
         )
 
     def student(self):

@@ -72,9 +72,9 @@ class MarksRemovalMigrationTests(TransactionTestCase):
         finally:
             executor = MigrationExecutor(connection)
             executor.migrate(executor.loader.graph.leaf_nodes())
+        from assessments.models import Assessment
         from distribution.models import ScriptEmail
         from submissions.models import Submission
-        from assessments.models import Assessment
 
         self.assertEqual(Submission.objects.get(pk=script.pk).status, "verified")
         self.assertEqual(Submission.objects.get(pk=script.pk).version, 4)

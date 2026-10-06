@@ -9,9 +9,9 @@ from django.utils import timezone
 
 from assessments.models import Assessment
 from distribution.models import ScriptEmail
-from submissions.models import Submission
 from submissions.emailing import build_script_email
 from submissions.lifecycle import lock_submission_scope
+from submissions.models import Submission
 
 RELEASE_AUTOMATIC = "automatic"
 RELEASE_APPROVAL = "approval"

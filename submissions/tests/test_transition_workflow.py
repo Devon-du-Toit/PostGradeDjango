@@ -1,13 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor
+
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase
-from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from submissions.tests.test_audit import SubmissionAuditTests
+from submissions.jobs import fail_job, finish_job, retry_recognition
+from submissions.models import Submission
 from submissions.tests.helpers import TemporaryMediaMixin, make_pdf
-from submissions.models import Submission, RecognitionJob
-from submissions.jobs import finish_job, retry_recognition, fail_job
+from submissions.tests.test_audit import SubmissionAuditTests
 
 
 class TransitionWorkflowTests(TemporaryMediaMixin, TestCase):
@@ -211,8 +212,10 @@ class CompetingCorrectionsTests(TransactionTestCase):
 
     def test_only_one_correction_can_consume_a_version(self):
         from threading import Barrier
-        from submissions.verification import verify_submission
+
         from django.core.exceptions import ValidationError
+
+        from submissions.verification import verify_submission
 
         barrier = Barrier(2)
 

@@ -10,24 +10,56 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('courses', '0002_course_unique_course_per_owner_period'),
+        ("courses", "0002_course_unique_course_per_owner_period"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Assessment',
+            name="Assessment",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('max_mark', models.DecimalField(decimal_places=2, max_digits=8, validators=[django.core.validators.MinValueValidator(0.01)])),
-                ('weight', models.DecimalField(decimal_places=2, max_digits=5, validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(100)])),
-                ('date', models.DateField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('course', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='assessments', to='courses.course')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                (
+                    "max_mark",
+                    models.DecimalField(
+                        decimal_places=2,
+                        max_digits=8,
+                        validators=[django.core.validators.MinValueValidator(0.01)],
+                    ),
+                ),
+                (
+                    "weight",
+                    models.DecimalField(
+                        decimal_places=2,
+                        max_digits=5,
+                        validators=[
+                            django.core.validators.MinValueValidator(0),
+                            django.core.validators.MaxValueValidator(100),
+                        ],
+                    ),
+                ),
+                ("date", models.DateField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "course",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="assessments",
+                        to="courses.course",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['date', 'name'],
+                "ordering": ["date", "name"],
             },
         ),
     ]

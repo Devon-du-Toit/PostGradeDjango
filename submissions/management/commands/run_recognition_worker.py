@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 RECOVERY_INTERVAL = 60
 
+
 class Command(BaseCommand):
     help = "Process queued submission recognition jobs."
 
@@ -50,9 +51,7 @@ class Command(BaseCommand):
             try:
                 processed = process_next_job()
             except Exception:
-                logger.exception(
-                    "Recognition worker loop failed"
-                )
+                logger.exception("Recognition worker loop failed")
                 processed = False
 
             if processed:
@@ -72,12 +71,8 @@ class Command(BaseCommand):
         try:
             recovered = recover_expired_jobs()
         except Exception:
-            logger.exception(
-                "Recognition job recovery failed"
-            )
+            logger.exception("Recognition job recovery failed")
             return
 
         if recovered:
-            self.stdout.write(
-                f"Recovered {recovered} expired recognition job(s)."
-            )
+            self.stdout.write(f"Recovered {recovered} expired recognition job(s).")

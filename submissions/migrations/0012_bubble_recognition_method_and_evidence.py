@@ -6,23 +6,30 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('submissions', '0011_merge_20260929_1942'),
+        ("submissions", "0011_merge_20260929_1942"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='recognitionattempt',
-            name='column_scores',
+            model_name="recognitionattempt",
+            name="column_scores",
             field=models.JSONField(blank=True, default=list),
         ),
         migrations.AddField(
-            model_name='recognitionattempt',
-            name='template_version',
+            model_name="recognitionattempt",
+            name="template_version",
             field=models.CharField(blank=True, max_length=50),
         ),
         migrations.AddField(
-            model_name='submission',
-            name='recognition_method',
-            field=models.CharField(choices=[('ocr', 'Handwritten digits (OCR)'), ('bubble', 'Filled bubbles')], default='ocr', max_length=20),
+            model_name="submission",
+            name="recognition_method",
+            field=models.CharField(
+                choices=[
+                    ("ocr", "Handwritten digits (OCR)"),
+                    ("bubble", "Filled bubbles"),
+                ],
+                default="ocr",
+                max_length=20,
+            ),
         ),
     ]
