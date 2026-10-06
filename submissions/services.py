@@ -46,9 +46,7 @@ def replace_submission(instance, validated_data, actor):
     validated_data = dict(validated_data)
     incoming_version = validated_data.get("version")
     if incoming_version is None:
-        raise ValidationError(
-            {"version": "This field is required on update."}
-        )
+        raise ValidationError({"version": "This field is required on update."})
     with transaction.atomic():
         lock_submission_scope(instance.pk)
         # Recognition workers lock their job before updating the submission.
