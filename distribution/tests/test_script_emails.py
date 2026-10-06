@@ -248,7 +248,14 @@ class ScriptEmailTests(ScriptFixture, TestCase):
             email="other@example.invalid",
         )
         enrollment = Enrollment.objects.create(course=self.course, student=other)
-        verify_submission(self.submission, enrollment, self.user)
+        verify_submission(
+            self.submission,
+            enrollment,
+            self.user,
+            correction=True,
+            expected_version=self.submission.version,
+            reason="Corrected the selected student after reviewing the script",
+        )
         email.refresh_from_db()
         self.assertEqual(email.status, "superseded")
         with self.assertRaises(ValidationError):

@@ -40,7 +40,7 @@ An expired send becomes `failed / delivery_unknown`. It may already have reached
 
 ## Changes, deletion and archiving
 
-Repeating the same verification is idempotent. Correcting the verified enrollment increments the submission version and supersedes unsent deliveries. Replacing a file requires its current version, clears verification, cancels recognition, supersedes unsent deliveries and queues recognition for the replacement. Its old delivery retains the immutable old attachment. Generic edits cannot move a script to another assessment or change its student; use verification.
+Repeating the same verification is idempotent. Correcting the verified enrollment increments the submission version and supersedes unsent deliveries. Replacing a file requires its current version, clears verification, cancels recognition, supersedes unsent deliveries and queues recognition for the replacement. Its old delivery retains the immutable old attachment. Generic edits cannot move a script to another assessment or change its student; use initial verification or the versioned, reasoned correction endpoint for a verified identity. See [SUBMISSION_TRANSITIONS.md](SUBMISSION_TRANSITIONS.md).
 
 The mail worker checks the current verified version/enrollment and active parents before delivery. Archiving cancels recognition and supersedes unsent mail, retaining files and sent history. Deleting a submission leaves email history with a null submission; it cannot be sent, approved or retried. Deleting a delivery record removes its snapshot after transaction commit. An SMTP send already in progress cannot be recalled.
 

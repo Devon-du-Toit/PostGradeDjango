@@ -10,7 +10,11 @@ from submissions.filters import (
     VerificationQueueFilter,
 )
 from submissions.models import Submission
-from submissions.serializers import SubmissionSerializer
+from submissions.serializers import (
+    SubmissionSerializer,
+    SubmissionTransitionSerializer,
+    SubmissionRetrySerializer,
+)
 
 from django.core.exceptions import ValidationError
 from django.http import FileResponse, Http404
@@ -77,6 +81,7 @@ class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class SubmissionVerifyView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
+    correction = False
 
     def post(self, request, pk):
         submission = generics.get_object_or_404(
@@ -86,13 +91,9 @@ class SubmissionVerifyView(generics.GenericAPIView):
             pk=pk,
         )
 
-        enrollment_id = request.data.get("enrollment")
-
-        if enrollment_id is None:
-            return Response(
-                {"detail": "Enrollment is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        payload = SubmissionTransitionSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        enrollment_id = payload.validated_data["enrollment"]
 
         enrollment = generics.get_object_or_404(
             Enrollment.objects.filter(
@@ -106,6 +107,9 @@ class SubmissionVerifyView(generics.GenericAPIView):
                 submission,
                 enrollment,
                 actor=request.user,
+                expected_version=payload.validated_data.get("version"),
+                correction=self.correction,
+                reason=payload.validated_data.get("reason", ""),
             )
         except ValidationError as exc:
             return Response(
@@ -124,6 +128,10 @@ class SubmissionVerifyView(generics.GenericAPIView):
             ).data,
             status=status.HTTP_200_OK,
         )
+
+
+class SubmissionCorrectionView(SubmissionVerifyView):
+    correction = True
 
 
 class SubmissionVerificationQueueView(generics.ListAPIView):
@@ -181,8 +189,12 @@ class SubmissionRetryRecognitionView(generics.GenericAPIView):
         )
 
         try:
+            payload = SubmissionRetrySerializer(data=request.data)
+            payload.is_valid(raise_exception=True)
             submission = retry_recognition(
                 submission.pk,
+                actor=request.user,
+                expected_version=payload.validated_data.get("version"),
             )
         except ValidationError as exc:
             return Response(

@@ -3,6 +3,7 @@ from django.urls import path
 from submissions.views import (
     RecognitionMethodsView,
     SubmissionDetailView,
+    SubmissionCorrectionView,
     SubmissionFileDownloadView,
     SubmissionListCreateView,
     SubmissionRecognitionImageView,
@@ -31,6 +32,11 @@ urlpatterns = [
         "<int:pk>/",
         SubmissionDetailView.as_view(),
         name="submission-detail",
+    ),
+    path(
+        "<int:pk>/correct/",
+        SubmissionCorrectionView.as_view(),
+        name="submission-correct",
     ),
     path(
         "<int:pk>/verify/",

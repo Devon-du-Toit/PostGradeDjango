@@ -7,6 +7,8 @@ from django.utils import timezone
 from assessments.models import Assessment
 from students.models import Enrollment
 
+UNCHANGED = object()
+
 
 class SubmissionQuerySet(models.QuerySet):
     def active(self):
@@ -85,6 +87,7 @@ class Submission(models.Model):
     ALLOWED_TRANSITIONS = {
         "uploaded": {"processing", "matched", "needs_verification"},
         "processing": {
+            "processing",
             "matched",
             "needs_verification",
             "verified",
@@ -101,12 +104,30 @@ class Submission(models.Model):
         actor,
         new_status,
         reason="",
-        new_enrollment=None,
+        new_enrollment=UNCHANGED,
+        expected_version=None,
     ):
         with transaction.atomic():
             locked = Submission.objects.select_for_update().get(pk=self.pk)
             previous_status = locked.status
             previous_enrollment = locked.enrollment
+
+            if expected_version is not None and expected_version != locked.version:
+                raise ValueError("This submission has changed. Reload and try again.")
+            if (
+                previous_status == self.Status.VERIFIED
+                and locked.enrollment_id is not None
+                and new_status == self.Status.VERIFIED
+                and new_enrollment is not UNCHANGED
+                and getattr(new_enrollment, "pk", None) != locked.enrollment_id
+                and (expected_version is None or not reason.strip())
+            ):
+                raise ValueError("Identity corrections require a version and a reason.")
+            if new_enrollment is not UNCHANGED and new_enrollment is not None:
+                if new_enrollment.course_id != locked.assessment.course_id:
+                    raise ValueError(
+                        "Enrollment must belong to the submission's course."
+                    )
 
             allowed = self.ALLOWED_TRANSITIONS.get(previous_status, set())
             if new_status not in allowed:
@@ -116,7 +137,7 @@ class Submission(models.Model):
 
             locked.status = new_status
             locked.version += 1
-            if new_enrollment is not None:
+            if new_enrollment is not UNCHANGED:
                 locked.enrollment = new_enrollment
             locked.save(update_fields=["status", "enrollment", "version", "updated_at"])
 

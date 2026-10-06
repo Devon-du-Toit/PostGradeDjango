@@ -57,7 +57,7 @@ Uploads accept validated PDF, JPG/JPEG and PNG; defaults: 15 MB, 20 PDF pages, 6
 
 States: uploaded, processing, matched, needs_verification, recognition_failed, verified. Delivery state is separate. A failed recognition can be verified manually on the assessment page; the global queue currently includes only matched and needs_verification.
 
-Verification is transactional and repeating the same verified enrollment is idempotent. File replacement requires `version`, resets enrollment/status, increments version and supersedes unsent mail. Generic edits cannot change the assessment or student. No raw public media path is returned; use protected download_url and evidence routes.
+Verification is transactional and repeating the same verified enrollment is idempotent. Send `version` on verification/retry to reject stale reviews. Changing a verified student requires `POST submissions/{id}/correct/` with enrollment, current version and nonblank reason. See [SUBMISSION_TRANSITIONS.md](SUBMISSION_TRANSITIONS.md). File replacement requires `version`, resets enrollment/status, increments version and supersedes unsent mail. Generic edits cannot change the assessment or student. No raw public media path is returned; use protected download_url and evidence routes.
 
 ## Script emails
 
