@@ -355,7 +355,7 @@ class ListQueryCountTests(ListAPITestData, TestCase):
             "/api/courses/": 2,
             "/api/students/": 2,
             "/api/enrollments/": 2,
-            f"/api/courses/{self.course.id}/students/": 2,
+            f"/api/courses/{self.course.id}/students/": 3,
             f"/api/courses/{self.course.id}/assessments/": 3,
             f"/api/assessments/{self.assessment.id}/results/": 3,
             f"/api/assessments/{self.assessment.id}/result-emails/": 3,

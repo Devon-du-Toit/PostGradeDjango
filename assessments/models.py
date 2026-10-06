@@ -2,13 +2,30 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
 
 from courses.models import Course
 from students.models import Enrollment
 
 
+class AssessmentQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(
+            archived_at__isnull=True, course__archived_at__isnull=True
+        )
+
+
+class ResultQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(
+            assessment__archived_at__isnull=True,
+            assessment__course__archived_at__isnull=True,
+        )
+
+
 class Assessment(models.Model):
+    objects = AssessmentQuerySet.as_manager()
     course = models.ForeignKey(
         Course,
         on_delete=models.CASCADE,
@@ -46,14 +63,25 @@ class Assessment(models.Model):
         auto_now=True,
     )
 
+    archived_at = models.DateTimeField(null=True, blank=True)
+    
     class Meta:
         ordering = ["date", "name"]
 
     def __str__(self):
         return f"{self.course} - {self.name}"
 
+    def archive(self):
+        from courses.lifecycle import stop_archived_work
 
+        with transaction.atomic():
+            if self.archived_at is None:
+                self.archived_at = timezone.now()
+                self.save(update_fields=["archived_at", "updated_at"])
+            stop_archived_work(assessment_id=self.pk)
+            
 class Result(models.Model):
+    objects = ResultQuerySet.as_manager()
     assessment = models.ForeignKey(
         Assessment,
         on_delete=models.CASCADE,

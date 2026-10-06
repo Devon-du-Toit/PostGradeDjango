@@ -87,7 +87,7 @@ Out of scope:
 ---
 
 Release integration note: [API_REFERENCE.md §14](API_REFERENCE.md#14-release-integration-status)
-identifies the archive/failed-recognition queue prerequisites. Protected
+identifies the remaining failed-recognition queue prerequisite. Archive enforcement, protected
 downloads, pagination and file validation are already implemented.
 
 ## 2. Conventions

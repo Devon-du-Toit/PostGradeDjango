@@ -3,8 +3,8 @@
 Release integration reference · updated 2026-10-06
 
 See [API_REFERENCE.md §14](API_REFERENCE.md#14-release-integration-status):
-archive (#39) and failed-recognition queue (#41) rules below require their
-code to be integrated into master. Pagination itself is already merged.
+the failed-recognition queue (#41) rules below require its
+code to be integrated into master. Pagination and archiving are already merged.
 
 ## Authentication and Ownership
 
@@ -61,7 +61,7 @@ The release verification queue is restricted to `needs_verification`, `matched` 
 
 `uploaded`, `processing`, `matched`, `needs_verification`, `recognition_failed`, `verified`, `marked`
 
-`pending_verifications` uses the same release queue statuses: `needs_verification`, `matched` and `recognition_failed`. It excludes `processing`, `verified` and `marked`. Once #39 is integrated, all counts and normal lists also exclude archived courses/assessments. Archived IDs are invalid choices for course/assessment filters; detail/action routes return 404. See [ARCHIVING.md](ARCHIVING.md).
+`pending_verifications` uses the same release queue statuses: `needs_verification`, `matched` and `recognition_failed`. It excludes `processing`, `verified` and `marked`. All counts and normal lists also exclude archived courses/assessments. Archived IDs are invalid choices for course/assessment filters; detail/action routes return 404. See [ARCHIVING.md](ARCHIVING.md).
 
 ## Dashboard Responses
 

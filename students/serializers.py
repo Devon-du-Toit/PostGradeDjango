@@ -43,6 +43,10 @@ class StudentSerializer(serializers.ModelSerializer):
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["course"].queryset = Course.objects.active()
+
     class Meta:
         model = Enrollment
         fields = [

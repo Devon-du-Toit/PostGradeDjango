@@ -29,11 +29,11 @@ OCR worker processes them. Lecturers verify the identity before marking;
 result-text emails are recorded with the mark and sent by a mail worker.
 Originals and recognition crops are retrieved through authenticated APIs.
 
-The release integration also includes course/assessment archiving,
-production signup controls and login throttling, failed recognitions in the
-review queue, and Ruff lint. **Merge prerequisites still apply:** at the
-6 October 2026 inspection, archive PR #39 is open and auth/cleanup/queue
-changes were merged into stacked branches rather than master. See the
+Course/assessment archiving is merged, preserving historical records/files
+and blocking archived workflows. **Merge prerequisites still apply** to
+production signup/throttling, failed recognitions in the review queue and
+Ruff lint: those changes were merged into stacked branches rather than
+master. See the
 [release integration status](DOCS/API_REFERENCE.md#14-release-integration-status)
 before treating those release rules as deployed behavior. This PR changes
 documentation only; it does not integrate the pending implementation code.

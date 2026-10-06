@@ -1,7 +1,5 @@
 # Course and assessment archiving
 
-Release integration documentation. The implementation must reach `master` before these release rules apply there; see [API reference integration status](API_REFERENCE.md#14-release-integration-status).
-
 `DELETE /api/courses/{id}/` and `DELETE /api/assessments/{id}/` archive an
 owner's active record and return `204`. Archiving retains students,
 enrollments, results, submissions, originals, recognition crops and audit

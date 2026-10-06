@@ -32,9 +32,9 @@
 
 This document is the entry point for understanding PostGrade's
 backend API. It covers the architecture shared by every app, and
-gives a full endpoint inventory — with synthetic request/response
-examples — for the four apps that had never been documented at the
-API level: **accounts, courses, students, and assessments**.
+gives an endpoint inventory with synthetic request/response examples for
+accounts, courses, students and assessments, plus dashboard, health and
+protected workflow references.
 
 ### 1.2 Scope
 
@@ -56,16 +56,15 @@ development review on 2026-09-14.
 
 This reference documents the consolidated release behavior, not a claim
 that every merged PR has reached `master`. The baseline inspected on
-6 October 2026 is `master` at `33721de`, with the completed archive
-implementation in PR #39 (`f9a3305`) and authentication/cleanup/queue work
+6 October 2026 is `master` at `9019d88`, including archive PR #39, with authentication/cleanup/queue work
 in the stacked branches listed in [§14](#14-release-integration-status).
 Integrate those implementations into `master` before merging this reference
-as the final release documentation. Until then, the archive, registration,
-throttle, Ruff and failed-recognition queue rules are release-target rules.
+as the final release documentation. Until then, registration, throttling, Ruff and failed-recognition queue
+rules are release-target rules. Archive enforcement is already on master.
 
 File validation/downloads (#22), transition locking (#24), pagination and
 dashboard APIs (#29), deployment groundwork (#32), duplicate validation
-(#31) and CSV hardening (#36) are already on the inspected master.
+(#31), CSV hardening (#36) and archiving (#39) are already on the inspected master.
 Bubble recognition, QR grouping and deployed staging validation remain open.
 
 ---
@@ -137,7 +136,7 @@ this pattern.
   information, and serializer decimal fields such as marks/maxima/weights
   are strings. Calculated percentages in custom JSON responses are numbers;
   clients should format them for display. Student numbers are strings.
-- **Archive scope:** after #39 is integrated, normal workflows exclude
+- **Archive scope:** normal workflows exclude
   archived courses/assessments. Detail/action routes return `404`, while
   filters and foreign-key inputs naming archived records return `400`.
   See [ARCHIVING.md](ARCHIVING.md).
@@ -274,7 +273,7 @@ year/semester.
 | `POST` | `/api/courses/` | Create a course (owner is set automatically) |
 | `GET` | `/api/courses/<id>/` | Retrieve one course |
 | `PUT`/`PATCH` | `/api/courses/<id>/` | Update a course |
-| `DELETE` | `/api/courses/<id>/` | Archive a course, retaining its data/files; 204 (#39 release policy) |
+| `DELETE` | `/api/courses/<id>/` | Archive a course, retaining its data/files; 204  |
 | `GET` | `/api/courses/<course_id>/students/` | List students enrolled in this course |
 | `POST` | `/api/courses/<course_id>/import-students/` | Bulk-import students from a CSV file |
 
@@ -384,7 +383,7 @@ mixed batch; the explicit response message says whether anything was saved.
 `{"file": "Missing required columns: email"}` (also for unreadable encoding
 or exceeded size limits). A mismatch contains `row`, `student_number` and
 `differences`, mapping changed fields to `existing`/`incoming` values.
-An archived course returns `404` once #39 is integrated, including when
+An archived course returns `404`, including when
 archiving occurs between validation and applying a plan.
 
 ---
@@ -502,7 +501,7 @@ which cannot exceed the assessment's `max_mark`.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET`/`POST` | `/api/courses/<course_id>/assessments/` | List/create assessments for a course |
-| `GET`/`PUT`/`PATCH`/`DELETE` | `/api/assessments/<id>/` | Manage one assessment; DELETE archives with 204 (#39 release policy) |
+| `GET`/`PUT`/`PATCH`/`DELETE` | `/api/assessments/<id>/` | Manage one assessment; DELETE archives with 204  |
 | `GET`/`POST` | `/api/assessments/<assessment_id>/results/` | List/create results for an assessment |
 | `GET`/`PUT`/`PATCH`/`DELETE` | `/api/results/<id>/` | Manage one result |
 | `GET` | `/api/courses/<course_id>/gradebook/` | Full gradebook for a course |
@@ -624,7 +623,7 @@ Gradebook values are calculated with Python `Decimal`, but DRF's JSON
 renderer emits those custom response values as JSON numbers. The direct
 result serializer emits `mark` as a decimal string and a rounded numeric
 `percentage`. Do not infer fixed display precision from JSON numeric values;
-format percentages in the client. After #39, archived assessments are
+format percentages in the client.  archived assessments are
 excluded from both the gradebook and weighted course percentage.
 
 ### 7.4 Assessment statistics
@@ -736,7 +735,10 @@ parents without deleting their files. See the detailed recognition and
 
 ## 9. Result Email Delivery
 
-Saving a mark and its result-email record commit together. A mail worker
+Submission marking at `/api/submissions/<id>/mark/` commits the Result and
+its result-email record together. Direct Result creation does not schedule
+an email; editing a Result with existing email records schedules its new
+mark version. A mail worker
 delivers later; mark-save success is separate from email delivery. The
 default release policy is `automatic`; `approval` creates
 `awaiting_approval` records. Email statuses are `awaiting_approval`,
@@ -752,7 +754,7 @@ Marking returns `email_delivery` alongside the Result. See
 
 These emails currently contain mark/percentage text; they do not attach
 the marked script or grant student download access. Original-script return
-still needs an agreed delivery mechanism. Once #39 is integrated, archive
+still needs an agreed delivery mechanism. Archive enforcement
 suppresses unsent email work while retaining delivery history; an SMTP
 send already in progress cannot be recalled.
 
@@ -760,7 +762,7 @@ send already in progress cannot be recalled.
 
 ## 10. Data Lifecycle and Operations
 
-- **Archive policy (#39 release prerequisite):** course/assessment DELETE
+- **Archive policy:** course/assessment DELETE
   returns `204`, hides archived workflows and retains records and files.
   Later reads/actions return `404`; filters/foreign-key inputs return `400`.
   Queued recognition and unsent emails are cancelled/superseded. Global
@@ -824,7 +826,7 @@ Common HTTP status codes used throughout:
 | `201 Created` | Successful POST that created something |
 | `400 Bad Request` | Validation failed |
 | `401 Unauthorized` | Missing or invalid JWT token |
-| `404 Not Found` | Missing/other-owner object, out-of-range page, or archived workflow after #39 |
+| `404 Not Found` | Missing/other-owner object, out-of-range page, or archived workflow |
 | `403 Forbidden` | Registration disabled by release policy |
 | `429 Too Many Requests` | Auth throttle exceeded; respect `Retry-After` |
 | `204 No Content` | Successful delete/archive; body is empty |
@@ -875,8 +877,8 @@ Checked 6 October 2026. A PR marked merged can have a non-master base.
 
 | Behavior | Inspected implementation | Prerequisite before these docs represent master |
 |---|---|---|
-| CSV/pagination/files/transition-lock/deployment foundation | `master` `33721de` | Already present |
-| Archive enforcement and retained files | PR #39 head `f9a3305` | Merge #39 into master |
+| CSV/pagination/files/transition-lock/deployment foundation | `master` `9019d88` | Already present |
+| Archive enforcement and retained files | #39 merged into `master` `9019d88` | Already present |
 | Registration/throttling | #33 merged into `issue-14-deployment` | Integrate auth commits into master |
 | Ruff cleanup/lint | #37 merged into `issue-8-auth-hardening` | Integrate cleanup commits into master |
 | Failed recognitions in queue/dashboard | #41 merged into `issue-12-safe-cleanup` | Integrate queue commits into master |

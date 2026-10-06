@@ -194,7 +194,7 @@ class CourseAPITests(TestCase):
         course.refresh_from_db()
         self.assertEqual(course.name, "Introductory Physics")
 
-    def test_delete_own_course(self):
+    def test_delete_own_course_archives_it(self):
         course = Course.objects.create(
             owner=self.user,
             code="PHY101",
@@ -211,8 +211,16 @@ class CourseAPITests(TestCase):
             response.status_code,
             status.HTTP_204_NO_CONTENT,
         )
-        self.assertFalse(
-            Course.objects.filter(id=course.id).exists()
+
+        course.refresh_from_db()
+        self.assertIsNotNone(course.archived_at)
+
+        follow_up = self.client.get(
+            f"/api/courses/{course.id}/"
+        )
+        self.assertEqual(
+            follow_up.status_code,
+            status.HTTP_404_NOT_FOUND,
         )
 
     def _create_course(self, **overrides):

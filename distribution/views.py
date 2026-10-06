@@ -18,6 +18,8 @@ from distribution.services import (
 def owned_emails(user):
     return ResultEmail.objects.filter(
         result__assessment__course__owner=user,
+        result__assessment__archived_at__isnull=True,
+        result__assessment__course__archived_at__isnull=True,
     ).select_related(
         "result__enrollment__student",
     )
@@ -36,7 +38,7 @@ class AssessmentResultEmailListView(generics.ListAPIView):
 
     def get_queryset(self):
         assessment = get_object_or_404(
-            Assessment,
+            Assessment.objects.active(),
             pk=self.kwargs["assessment_id"],
             course__owner=self.request.user,
         )
@@ -84,7 +86,7 @@ class AssessmentResultEmailApproveView(generics.GenericAPIView):
 
     def post(self, request, assessment_id):
         assessment = get_object_or_404(
-            Assessment,
+            Assessment.objects.active(),
             pk=assessment_id,
             course__owner=request.user,
         )

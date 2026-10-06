@@ -39,10 +39,12 @@ def claim_next_email():
     with transaction.atomic():
         email = (
             ResultEmail.objects
-            .select_for_update(skip_locked=True)
+            .select_for_update(skip_locked=True, of=("self",))
             .filter(
                 status=ResultEmail.Status.QUEUED,
                 run_after__lte=now,
+                result__assessment__archived_at__isnull=True,
+                result__assessment__course__archived_at__isnull=True,
             )
             .order_by("run_after")
             .first()
@@ -163,7 +165,9 @@ def mark_failed(email_id, claimed_attempt, reason, error, retry):
         email.last_error = error[:MAX_ERROR_LENGTH]
         email.lease_expires_at = None
 
-        if retry and email.attempts < email.max_attempts:
+        if not Result.objects.active().filter(pk=email.result_id).exists():
+            email.status = ResultEmail.Status.SUPERSEDED
+        elif retry and email.attempts < email.max_attempts:
             delay = RETRY_DELAYS[
                 min(email.attempts - 1, len(RETRY_DELAYS) - 1)
             ]
@@ -187,7 +191,7 @@ def mark_failed(email_id, claimed_attempt, reason, error, retry):
 
 def deliver_email(email, claimed_attempt):
     current_version = (
-        Result.objects
+        Result.objects.active()
         .filter(pk=email.result_id)
         .values_list("version", flat=True)
         .first()
