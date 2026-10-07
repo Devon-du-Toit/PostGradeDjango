@@ -162,7 +162,6 @@ All configuration comes from environment variables; nothing secret is committed.
 | `DB_CONN_MAX_AGE` | `0` | Seconds to reuse database connections. Production: `60`. |
 | `MEDIA_ROOT` | `/data/media` in the image | Where uploads and crops are stored. |
 | `SCRIPT_EMAIL_RELEASE_POLICY` | `automatic` | `approval` holds emails until a lecturer approves them. |
-| `ALLOW_REGISTRATION` | value of `DEBUG` | Self-registration; leave off in production and create lecturers in Django admin. *(Added in #8.)* |
 | `LOGIN_THROTTLE_RATE`, `REGISTER_THROTTLE_RATE` | `10/min`, `5/hour` | *(Added in #8.)* |
 | `LOG_FORMAT`, `LOG_LEVEL` | `json` (when not DEBUG), `INFO` | |
 | `WEB_CONCURRENCY` | `3` | gunicorn processes in the web container. ~2 per vCPU. |
@@ -465,4 +464,4 @@ This release removes numeric grading. Before applying its migrations, stop write
 
 ## Account lifecycle rollout (#8)
 
-Deploy the matching Vue auth PR before enabling backend refresh rotation. Run migrations (blacklist tables and shared throttle cache), then restart web workers. Existing password-unbound JWT sessions require a fresh sign-in. Set ALLOW_REGISTRATION explicitly if production should offer public signup; it otherwise defaults to DEBUG. Read [PERMISSIONS.md](PERMISSIONS.md) for the endpoint matrix and proxy assumptions. Schedule `python manage.py flushexpiredtokens` daily. API throttle limits do not protect Django admin or guarantee strict limits under concurrency: configure perimeter rate limiting for auth and `/admin/login/`. Staff password resets invalidate old access/refresh sessions; role labels alone never grant staff or cross-owner API access.
+Deploy the matching Vue auth PR before enabling backend refresh rotation. Run migrations (blacklist tables and shared throttle cache), then restart web workers. Existing password-unbound JWT sessions require a fresh sign-in. Lecturer signup is always available; the former ALLOW_REGISTRATION setting is no longer used. Read [PERMISSIONS.md](PERMISSIONS.md) for the endpoint matrix and proxy assumptions. Schedule `python manage.py flushexpiredtokens` daily. API throttle limits do not protect Django admin or guarantee strict limits under concurrency: configure perimeter rate limiting for auth and `/admin/login/`. Staff password resets invalidate old access/refresh sessions; role labels alone never grant staff or cross-owner API access.

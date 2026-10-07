@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import generics, serializers
 from rest_framework.exceptions import PermissionDenied
@@ -35,13 +34,6 @@ class RegisterView(generics.CreateAPIView):
     authentication_classes = []
     throttle_classes = [RegisterThrottle]
 
-    def create(self, request, *args, **kwargs):
-        if not settings.ALLOW_REGISTRATION:
-            raise PermissionDenied(
-                "Registration is closed. Contact an administrator for an account."
-            )
-        return super().create(request, *args, **kwargs)
-
 
 class CurrentUserView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
@@ -58,7 +50,7 @@ class RegistrationPolicyView(APIView):
     def get(self, request):
         return Response(
             {
-                "registration_open": settings.ALLOW_REGISTRATION,
+                "registration_open": True,
                 "password_recovery_available": recovery_enabled(),
             }
         )

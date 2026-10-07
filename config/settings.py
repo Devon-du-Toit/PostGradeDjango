@@ -277,8 +277,7 @@ BUBBLE_AUTO_MATCH_ENABLED = (
 )
 
 
-# Public signup stays available locally; deployments opt in explicitly.
-ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", DEBUG)
+# Public lecturer signup is always available.
 ALLOW_PASSWORD_RECOVERY = env_bool("ALLOW_PASSWORD_RECOVERY", DEBUG)
 PASSWORD_RESET_FRONTEND_URL = os.getenv(
     "PASSWORD_RESET_FRONTEND_URL",

@@ -106,9 +106,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 Use your actual PostgreSQL port (the example uses 5433). Local defaults
 permit `localhost`/`127.0.0.1` and the Vue origin `http://localhost:5173`.
 For production set `DEBUG=False`, allowed hosts, HTTPS/CORS, private media
-and SMTP as described in [DEPLOYMENT.md](DOCS/DEPLOYMENT.md). After auth
-hardening is integrated, `ALLOW_REGISTRATION` defaults to `DEBUG`; closed
-signup requires administrator-created accounts. Configure `NUM_PROXIES`
+and SMTP as described in [DEPLOYMENT.md](DOCS/DEPLOYMENT.md). Lecturer sign-up is always available in every environment. Configure `NUM_PROXIES`
 for the trusted hosting proxy. Never commit `.env` or use example secrets.
 
 
