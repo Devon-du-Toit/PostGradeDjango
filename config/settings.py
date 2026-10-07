@@ -311,3 +311,4 @@ SIMPLE_JWT = {
 
 # Includes excluded duplicates, bounding cumulative group rebuild cost.
 MAX_QR_GROUP_PAGES = int(os.getenv("MAX_QR_GROUP_PAGES", "100"))
+MAX_QR_GROUP_BYTES = int(os.getenv("MAX_QR_GROUP_BYTES", str(15 * 1024 * 1024)))

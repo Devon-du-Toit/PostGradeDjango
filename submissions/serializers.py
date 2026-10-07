@@ -79,10 +79,11 @@ class SubmissionSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["assessment"].queryset = Assessment.objects.active()
-        self.fields["enrollment"].queryset = Enrollment.objects.filter(
+        self.fields["enrollment"].queryset = Enrollment.objects.active().filter(
             course__archived_at__isnull=True,
         )
 
+    is_active = serializers.SerializerMethodField()
     grouped_pages = serializers.SerializerMethodField()
     upload_group_ids = serializers.SerializerMethodField()
     qr_group_status = serializers.SerializerMethodField()
@@ -99,6 +100,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "id",
             "assessment",
             "recognition_method",
+            "archived_at",
+            "superseded_at",
+            "superseded_by",
             "qr_metadata",
             "qr_review_issues",
             "qr_group_status",
@@ -109,6 +113,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "download_url",
             "original_filename",
             "status",
+            "is_active",
             "recognition",
             "recognition_job",
             "created_at",
@@ -118,6 +123,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "original_filename",
+            "archived_at",
+            "superseded_at",
+            "superseded_by",
             "qr_metadata",
             "qr_review_issues",
             "status",
@@ -127,6 +135,14 @@ class SubmissionSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "file": {"write_only": True},
         }
+
+    def get_is_active(self, submission):
+        if submission.archived_at or submission.superseded_at:
+            return False
+        enrollment = submission._state.fields_cache.get("enrollment")
+        return not (
+            enrollment and (enrollment.withdrawn_at or enrollment.student.archived_at)
+        )
 
     def get_upload_group_ids(self, submission):
         return getattr(submission, "upload_group_ids", [submission.pk])
@@ -330,3 +346,74 @@ class SubmissionTransitionSerializer(serializers.Serializer):
 
 class SubmissionRetrySerializer(serializers.Serializer):
     version = serializers.IntegerField(min_value=0, required=False)
+
+
+class SubmissionHistorySerializer(SubmissionSerializer):
+    student_identity = serializers.SerializerMethodField()
+    file_revisions = serializers.SerializerMethodField()
+    audit_entries = serializers.SerializerMethodField()
+
+    class Meta(SubmissionSerializer.Meta):
+        fields = [
+            *SubmissionSerializer.Meta.fields,
+            "file_revisions",
+            "audit_entries",
+            "student_identity",
+        ]
+
+    def get_download_url(self, submission):
+        return (
+            reverse("submission-history-file", args=[submission.pk])
+            if submission.file
+            else None
+        )
+
+    def get_student_identity(self, submission):
+        for revision in submission.file_revisions.all():
+            if revision.student_identity:
+                return revision.student_identity
+        if submission.enrollment_id:
+            student = submission.enrollment.student
+            return dict(
+                student_number=student.student_number,
+                first_name=student.first_name,
+                last_name=student.last_name,
+            )
+        return {}
+
+    def get_file_revisions(self, submission):
+        return [
+            dict(
+                id=revision.pk,
+                version=revision.version,
+                original_filename=revision.original_filename,
+                student_identity=revision.student_identity,
+                status=revision.status,
+                created_at=revision.created_at,
+                download_url=reverse(
+                    "submission-revision-file", args=[submission.pk, revision.pk]
+                ),
+            )
+            for revision in submission.file_revisions.all()
+        ]
+
+    def get_audit_entries(self, submission):
+        return [
+            dict(
+                id=audit.pk,
+                actor=audit.actor_id,
+                actor_email=audit.actor.email if audit.actor else None,
+                actor_name=(
+                    (audit.actor.get_full_name() or audit.actor.email)
+                    if audit.actor
+                    else "System"
+                ),
+                timestamp=audit.timestamp,
+                previous_status=audit.previous_status,
+                new_status=audit.new_status,
+                previous_identity=audit.previous_identity,
+                new_identity=audit.new_identity,
+                reason=audit.reason,
+            )
+            for audit in submission.audit_entries.all()
+        ]

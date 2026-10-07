@@ -55,3 +55,8 @@ CSV validation loads the owner-scoped student records for the whole bounded file
 Application locks the active course first and existing students in primary-key order, rechecks every snapshot, then uses batches of at most 500 for student creation, explicit contact updates and missing enrollment creation. No conflicting row is ignored. A constraint error rolls back all batches and returns 409. Bulk updates explicitly advance updated_at; owner keys and student numbers are never changed by contact updates. These bulk writes stay within the validated, locked service; they are not a substitute for database membership constraints.
 
 PostgreSQL service-level regression budgets for a 300-student class (including transaction savepoint/release in tests): validation 1 query; new students/enrollments 7; repeat unchanged import 5; contact updates 6. Request authentication and initial course lookup add their own queries. A 1001-row test verifies complete multi-batch writes. Parsing limits, physical row errors, dry-run summaries, opt-in contact updates and additive enrollment semantics are unchanged.
+
+Approved retention and explicit withdrawal/restore policy: see
+[SCRIPT_HISTORY_AND_WITHDRAWAL.md](SCRIPT_HISTORY_AND_WITHDRAWAL.md). Scoped CSV
+preview/apply rejects withdrawn memberships or archived contacts; it does not
+restore them. The additional membership lookup remains constant per batch.

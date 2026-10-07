@@ -8,14 +8,28 @@ from submissions.views import (
     SubmissionCorrectionView,
     SubmissionDetailView,
     SubmissionFileDownloadView,
+    SubmissionHistoryFileView,
+    SubmissionHistoryView,
     SubmissionListCreateView,
     SubmissionRecognitionImageView,
     SubmissionRetryRecognitionView,
+    SubmissionRevisionFileView,
     SubmissionVerificationQueueView,
     SubmissionVerifyView,
 )
 
 urlpatterns = [
+    path("history/", SubmissionHistoryView.as_view(), name="submission-history"),
+    path(
+        "<int:pk>/history-file/",
+        SubmissionHistoryFileView.as_view(),
+        name="submission-history-file",
+    ),
+    path(
+        "<int:pk>/revisions/<int:revision_id>/file/",
+        SubmissionRevisionFileView.as_view(),
+        name="submission-revision-file",
+    ),
     path(
         "<int:pk>/uploads/<int:upload_id>/file/",
         ScriptUploadFileView.as_view(),

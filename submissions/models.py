@@ -13,6 +13,13 @@ UNCHANGED = object()
 class SubmissionQuerySet(models.QuerySet):
     def active(self):
         return self.filter(
+            models.Q(enrollment__isnull=True)
+            | models.Q(
+                enrollment__withdrawn_at__isnull=True,
+                enrollment__student__archived_at__isnull=True,
+            ),
+            archived_at__isnull=True,
+            superseded_at__isnull=True,
             assessment__archived_at__isnull=True,
             assessment__course__archived_at__isnull=True,
         )
@@ -24,6 +31,16 @@ class Submission(models.Model):
     class RecognitionMethod(models.TextChoices):
         OCR = "ocr", "Handwritten digits (OCR)"
         BUBBLE = "bubble", "Filled bubbles"
+
+    archived_at = models.DateTimeField(null=True, blank=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    superseded_by = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="superseded_scripts",
+    )
 
     qr_group_key = models.CharField(max_length=240, blank=True)
     qr_metadata = models.JSONField(default=dict, blank=True)
@@ -45,7 +62,7 @@ class Submission(models.Model):
 
     assessment = models.ForeignKey(
         Assessment,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="submissions",
     )
 
@@ -143,7 +160,8 @@ class Submission(models.Model):
                 raise ValueError("Identity corrections require a version and a reason.")
             if new_enrollment is not UNCHANGED and new_enrollment is not None:
                 new_enrollment = (
-                    Enrollment.objects.select_related("student")
+                    Enrollment.objects.active()
+                    .select_related("student")
                     .select_for_update(of=("self",))
                     .filter(pk=new_enrollment.pk)
                     .first()
@@ -190,8 +208,19 @@ class Submission(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
+                fields=["assessment", "enrollment"],
+                condition=Q(
+                    status="verified",
+                    enrollment__isnull=False,
+                    archived_at__isnull=True,
+                    superseded_at__isnull=True,
+                ),
+                name="one_current_verified_script",
+            ),
+            models.UniqueConstraint(
                 fields=["assessment", "qr_group_key"],
-                condition=~Q(qr_group_key=""),
+                condition=~Q(qr_group_key="")
+                & Q(archived_at__isnull=True, superseded_at__isnull=True),
                 name="unique_assessment_qr_group",
             ),
             models.CheckConstraint(
@@ -219,13 +248,13 @@ class SubmissionAudit(models.Model):
 
     submission = models.ForeignKey(
         Submission,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="audit_entries",
     )
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="submission_audits",
@@ -557,3 +586,35 @@ class ScriptUpload(models.Model):
     file = models.FileField(upload_to="script-uploads/%Y/%m/%d/")
     original_filename = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class SubmissionFileRevision(models.Model):
+    status = models.CharField(max_length=20)
+    student_identity = models.JSONField(default=dict, blank=True)
+    submission = models.ForeignKey(
+        Submission, on_delete=models.PROTECT, related_name="file_revisions"
+    )
+    file = models.FileField(upload_to="retained-script-revisions/")
+    version = models.PositiveIntegerField()
+    original_filename = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = type(self).objects.get(pk=self.pk)
+            if any(
+                getattr(self, field) != getattr(original, field)
+                for field in (
+                    "submission_id",
+                    "file",
+                    "version",
+                    "original_filename",
+                    "student_identity",
+                    "status",
+                )
+            ):
+                raise ValidationError("Retained file revisions are immutable.")
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ["-version", "-pk"]

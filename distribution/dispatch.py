@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from distribution.models import ScriptEmail
 from distribution.services import is_current
+from submissions.models import Submission
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def claim_next_email():
             ScriptEmail.objects.select_for_update(skip_locked=True, of=("self",))
             .filter(
                 status=ScriptEmail.Status.QUEUED,
+                submission__in=Submission.objects.active(),
                 submission__isnull=False,
                 run_after__lte=now,
                 submission__assessment__archived_at__isnull=True,

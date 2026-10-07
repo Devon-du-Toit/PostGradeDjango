@@ -183,6 +183,7 @@ def build_import_plan(
     uploaded_file,
     update_existing=False,
     serializer_context=None,
+    course=None,
 ):
     """
     Validate every row of the uploaded CSV and return an ImportPlan
@@ -277,10 +278,33 @@ def build_import_plan(
             owner=owner, student_number__in=seen_student_numbers
         )
     }
+    withdrawn_ids = (
+        set(
+            Enrollment.objects.filter(
+                course=course, withdrawn_at__isnull=False
+            ).values_list("student_id", flat=True)
+        )
+        if course is not None
+        else set()
+    )
     for row_number, fields in parsed_rows:
         student_number = fields["student_number"]
         existing_student = existing_students.get(student_number)
 
+        if existing_student is not None and (
+            existing_student.archived_at is not None
+            or existing_student.pk in withdrawn_ids
+        ):
+            plan.errors.append(
+                _error_entry(
+                    row_number,
+                    {
+                        "student_number": "Restore the archived contact or withdrawn membership explicitly before importing."
+                    },
+                    student_number,
+                )
+            )
+            continue
         plan.expected_students[student_number] = {
             "row": row_number,
             "pk": existing_student.pk if existing_student else None,
@@ -390,6 +414,18 @@ def apply_import_plan(owner, course, plan):
                             number,
                         )
                     )
+            if (
+                any(student.archived_at is not None for student in locked)
+                or Enrollment.objects.filter(
+                    course=course,
+                    student_id__in=[student.pk for student in locked],
+                    withdrawn_at__isnull=False,
+                ).exists()
+            ):
+                raise CSVFileError(
+                    "Archived contacts and withdrawn memberships require explicit restore. Nothing was saved.",
+                    status_code=409,
+                )
             if conflicts:
                 raise CSVFileError(
                     "Class list changed. Nothing was saved. Preview again.",
@@ -410,11 +446,12 @@ def apply_import_plan(owner, course, plan):
                 for attr in TRACKED_FIELDS:
                     setattr(current, attr, validated[attr])
                 current.updated_at = updated_at
+                current.version += 1
                 updates.append(current)
             if updates:
                 Student.objects.bulk_update(
                     updates,
-                    [*TRACKED_FIELDS, "updated_at"],
+                    [*TRACKED_FIELDS, "updated_at", "version"],
                     batch_size=BULK_BATCH_SIZE,
                 )
             students.extend(updates)
