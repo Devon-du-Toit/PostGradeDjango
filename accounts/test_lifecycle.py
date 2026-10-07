@@ -26,7 +26,7 @@ class AccountLifecycleTests(TestCase):
             format="json",
         )
 
-    def test_signup_policy_and_privilege_fields(self):
+    def test_signup_is_always_open_and_ignores_privilege_fields(self):
         payload = {
             "email": "new@example.invalid",
             "password": "ExamplePassword!42",
@@ -35,18 +35,13 @@ class AccountLifecycleTests(TestCase):
             "is_superuser": True,
             "is_active": False,
         }
-        with override_settings(ALLOW_REGISTRATION=False):
+        with override_settings(DEBUG=False, ALLOW_REGISTRATION=False):
             self.assertEqual(
                 self.client.get("/api/auth/registration-policy/").data[
                     "registration_open"
                 ],
-                False,
+                True,
             )
-            self.assertEqual(
-                self.client.post("/api/auth/register/", payload).status_code, 403
-            )
-            self.assertFalse(User.objects.filter(email=payload["email"]).exists())
-        with override_settings(ALLOW_REGISTRATION=True):
             self.assertEqual(
                 self.client.post("/api/auth/register/", payload).status_code, 201
             )
@@ -70,7 +65,7 @@ class AccountLifecycleTests(TestCase):
         # A different web client sees the same shared cache entries.
         self.assertEqual(APIClient().post("/api/auth/login/", {}).status_code, 429)
 
-    @override_settings(ALLOW_REGISTRATION=True, REGISTER_THROTTLE_RATE="1/hour")
+    @override_settings(REGISTER_THROTTLE_RATE="1/hour")
     def test_registration_is_throttled(self):
         self.assertEqual(self.client.post("/api/auth/register/", {}).status_code, 400)
         self.assertEqual(self.client.post("/api/auth/register/", {}).status_code, 429)
@@ -144,7 +139,6 @@ class AccountLifecycleTests(TestCase):
             self.assertEqual(response.status_code, 429)
             self.assertIn("Retry-After", response)
 
-    @override_settings(ALLOW_REGISTRATION=True)
     def test_signup_password_validation_uses_account_attributes(self):
         response = self.client.post(
             "/api/auth/register/",

@@ -62,7 +62,7 @@ the current behaviour, written down so nobody assumes otherwise.
 
 | Topic | Implemented policy | Setting |
 |---|---|---|
-| Signup | Public lecturer signup remains available in development. Production requires explicit opt-in; otherwise a trusted staff administrator creates accounts. Registration-policy reports whether signup is open; Vue hides the signup form when closed. Signup ignores privilege fields and applies Django password validators with user attributes. | ALLOW_REGISTRATION defaults to DEBUG |
+| Signup | Public lecturer signup is always available in development and production. Registration-policy reports registration_open=true for compatibility; Vue always shows the signup link and form. Signup ignores privilege fields and applies Django password validators with user attributes. | Always available |
 | Login throttling | 10 requests per minute per client, including invalid credentials; returns 429 and Retry-After. | LOGIN_THROTTLE_RATE |
 | Signup throttling | 5 requests per hour per client. | REGISTER_THROTTLE_RATE |
 | Refresh/logout throttling | Separate limits of 30 requests per minute per client each. | REFRESH_THROTTLE_RATE / LOGOUT_THROTTLE_RATE |
@@ -82,7 +82,7 @@ DRF throttling is an application limit, not a complete brute-force or denial-of-
 
 Deploy the matching Vue auth update first, then migrate/restart the backend. Existing clients that ignore the rotated refresh response will lose their session on the next refresh. Enabling password-bound tokens invalidates sessions issued before this release; users sign in again. Never remove blacklist migrations while valid refresh tokens remain. Schedule `python manage.py flushexpiredtokens` daily to bound outstanding/blacklisted-token history; shared throttle cache entries are culled by Django DatabaseCache.
 
-Set DEBUG=true locally for the requested signup workflow, or ALLOW_REGISTRATION=true explicitly. For public production signup deliberately set ALLOW_REGISTRATION=true; otherwise the production default is closed. No invitation or email-verification policy is silently introduced. Configure NUM_PROXIES only for the actual trusted topology. Endpoint matrix role columns are implemented owner rules, not proposed future role grants.
+Signup is always available regardless of DEBUG or legacy ALLOW_REGISTRATION environment values. No invitation or email-verification policy is silently introduced. Configure NUM_PROXIES only for the actual trusted topology. Endpoint matrix role columns are implemented owner rules, not proposed future role grants.
 
 The Vue update coordinates with [Vue #5](https://github.com/Devon-du-Toit/PostGradeVue/issues/5): one store owns refresh persistence, login failures never trigger a refresh loop, late refresh/user responses cannot restore a logged-out session, and failed refreshes clear state and route to login. Backend owner filters remain the authorization boundary.
 
