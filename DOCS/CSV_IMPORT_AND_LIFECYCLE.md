@@ -46,3 +46,12 @@ See [ARCHIVING.md](ARCHIVING.md), [DB_REVIEW.md](DB_REVIEW.md), [MARKS_REMOVAL.m
 CSV regressions cover BOM/encoding, input caps, quoted/multiline records, physical lines, header width, blanks, duplicate identities, invalid flags, dry runs, explicit updates, leading zeros, repeat imports, owner isolation, stale/deleted/new identities and transaction rollback. Concurrent prebuilt plans can consume an absent identity only once; the other returns 409. Lifecycle regressions validate serializers before archive and confirm their later save is rejected, as well as enrollment races and retired grading inputs.
 
 There is no data migration or frontend payload change. Clients should preview again after 409. Existing archive and delivery regressions remain part of the backend suite.
+
+
+## Bulk query budget
+
+CSV validation loads the owner-scoped student records for the whole bounded file in one query, while reusing the normal serializer's field rules. File duplicates and stale-preview checks remain separate; ordinary student API edits retain their per-request uniqueness check.
+
+Application locks the active course first and existing students in primary-key order, rechecks every snapshot, then uses batches of at most 500 for student creation, explicit contact updates and missing enrollment creation. No conflicting row is ignored. A constraint error rolls back all batches and returns 409. Bulk updates explicitly advance updated_at; owner keys and student numbers are never changed by contact updates. These bulk writes stay within the validated, locked service; they are not a substitute for database membership constraints.
+
+PostgreSQL service-level regression budgets for a 300-student class (including transaction savepoint/release in tests): validation 1 query; new students/enrollments 7; repeat unchanged import 5; contact updates 6. Request authentication and initial course lookup add their own queries. A 1001-row test verifies complete multi-batch writes. Parsing limits, physical row errors, dry-run summaries, opt-in contact updates and additive enrollment semantics are unchanged.

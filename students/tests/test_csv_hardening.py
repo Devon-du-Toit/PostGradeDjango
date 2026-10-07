@@ -68,6 +68,12 @@ class CSVHardeningTests(APITestCase):
         self.assertEqual(response.data["errors"][0]["row"], 6)
         self.assertFalse(Student.objects.exists())
 
+    def test_mixed_field_and_shape_errors_remain_in_physical_row_order(self):
+        response = self.upload(HEADER + "001,Ann,Lee,invalid-email\n002,Bob\n")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual([error["row"] for error in response.data["errors"]], [2, 3])
+        self.assertFalse(Student.objects.exists())
+
     def test_extra_columns_do_not_hide_a_malformed_blank_row(self):
         response = self.upload(HEADER + ",,,,surplus\n")
         self.assertEqual(response.status_code, 400)
@@ -142,7 +148,7 @@ class CSVHardeningTests(APITestCase):
         student = self.student()
         with patch.object(
             Enrollment.objects,
-            "get_or_create",
+            "bulk_create",
             side_effect=IntegrityError("synthetic conflict"),
         ):
             response = self.upload(
