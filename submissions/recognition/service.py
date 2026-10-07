@@ -185,7 +185,9 @@ def run_recognition(submission, attempt):
         for candidate in candidates
     ]
 
-    enrollments = submission.assessment.course.enrollments.select_related("student")
+    enrollments = submission.assessment.course.enrollments.active().select_related(
+        "student"
+    )
 
     enrollment_by_number = {
         enrollment.student.student_number: enrollment for enrollment in enrollments
@@ -249,7 +251,8 @@ def run_bubble_recognition(submission, attempt):
     ]
     # Exact equality only; no OCR, nearest-number lookup or fuzzy matching.
     enrollment = (
-        submission.assessment.course.enrollments.select_related("student")
+        submission.assessment.course.enrollments.active()
+        .select_related("student")
         .filter(
             student__student_number=reading.candidate,
         )

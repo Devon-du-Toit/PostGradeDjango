@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from courses.models import Course
 from students.models import Enrollment, Student
@@ -40,6 +41,14 @@ REQUIRED_COLUMNS = (
 # mismatch. student_number is deliberately excluded: it's the key
 # used to find the match in the first place, so it can't differ.
 TRACKED_FIELDS = ("first_name", "last_name", "email")
+BULK_BATCH_SIZE = 500
+
+
+class CSVStudentSerializer(StudentSerializer):
+    """Reuse field validation; owner-scoped uniqueness is checked in one lookup."""
+
+    def validate_student_number(self, student_number):
+        return student_number
 
 
 class CSVFileError(Exception):
@@ -174,6 +183,7 @@ def build_import_plan(
     uploaded_file,
     update_existing=False,
     serializer_context=None,
+    course=None,
 ):
     """
     Validate every row of the uploaded CSV and return an ImportPlan
@@ -186,6 +196,7 @@ def build_import_plan(
     plan = ImportPlan(owner_id=owner.pk)
     seen_student_numbers = {}
 
+    parsed_rows = []
     records = 0
     while True:
         # Physical starting line, including blank lines and multiline CSV records.
@@ -259,11 +270,41 @@ def build_import_plan(
 
         seen_student_numbers[student_number] = row_number
 
-        existing_student = Student.objects.filter(
-            owner=owner,
-            student_number=student_number,
-        ).first()
+        parsed_rows.append((row_number, fields))
 
+    existing_students = {
+        student.student_number: student
+        for student in Student.objects.filter(
+            owner=owner, student_number__in=seen_student_numbers
+        )
+    }
+    withdrawn_ids = (
+        set(
+            Enrollment.objects.filter(
+                course=course, withdrawn_at__isnull=False
+            ).values_list("student_id", flat=True)
+        )
+        if course is not None
+        else set()
+    )
+    for row_number, fields in parsed_rows:
+        student_number = fields["student_number"]
+        existing_student = existing_students.get(student_number)
+
+        if existing_student is not None and (
+            existing_student.archived_at is not None
+            or existing_student.pk in withdrawn_ids
+        ):
+            plan.errors.append(
+                _error_entry(
+                    row_number,
+                    {
+                        "student_number": "Restore the archived contact or withdrawn membership explicitly before importing."
+                    },
+                    student_number,
+                )
+            )
+            continue
         plan.expected_students[student_number] = {
             "row": row_number,
             "pk": existing_student.pk if existing_student else None,
@@ -275,7 +316,7 @@ def build_import_plan(
         }
 
         if existing_student is None:
-            serializer = StudentSerializer(data=fields, context=serializer_context)
+            serializer = CSVStudentSerializer(data=fields, context=serializer_context)
 
             if not serializer.is_valid():
                 plan.errors.append(
@@ -290,7 +331,7 @@ def build_import_plan(
             plan.to_create.append(serializer.validated_data)
             continue
 
-        serializer = StudentSerializer(
+        serializer = CSVStudentSerializer(
             existing_student, data=fields, context=serializer_context
         )
         if not serializer.is_valid():
@@ -322,6 +363,7 @@ def build_import_plan(
         else:
             plan.to_enroll_unchanged.append(existing_student)
 
+    plan.errors.sort(key=lambda error: error["row"])
     return plan
 
 
@@ -372,27 +414,65 @@ def apply_import_plan(owner, course, plan):
                             number,
                         )
                     )
+            if (
+                any(student.archived_at is not None for student in locked)
+                or Enrollment.objects.filter(
+                    course=course,
+                    student_id__in=[student.pk for student in locked],
+                    withdrawn_at__isnull=False,
+                ).exists()
+            ):
+                raise CSVFileError(
+                    "Archived contacts and withdrawn memberships require explicit restore. Nothing was saved.",
+                    status_code=409,
+                )
             if conflicts:
                 raise CSVFileError(
                     "Class list changed. Nothing was saved. Preview again.",
                     status_code=409,
                     errors=conflicts,
                 )
-            students = []
-            for validated in plan.to_create:
-                students.append(Student.objects.create(**{**validated, "owner": owner}))
+            students = Student.objects.bulk_create(
+                [
+                    Student(**{**validated, "owner": owner})
+                    for validated in plan.to_create
+                ],
+                batch_size=BULK_BATCH_SIZE,
+            )
+            updates = []
+            updated_at = timezone.now()
             for student, validated in plan.to_update:
                 current = by_number[student.student_number]
                 for attr in TRACKED_FIELDS:
                     setattr(current, attr, validated[attr])
-                current.save(update_fields=[*TRACKED_FIELDS, "updated_at"])
-                students.append(current)
+                current.updated_at = updated_at
+                current.version += 1
+                updates.append(current)
+            if updates:
+                Student.objects.bulk_update(
+                    updates,
+                    [*TRACKED_FIELDS, "updated_at", "version"],
+                    batch_size=BULK_BATCH_SIZE,
+                )
+            students.extend(updates)
             students.extend(
                 by_number[student.student_number]
                 for student in plan.to_enroll_unchanged
             )
-            for student in students:
-                Enrollment.objects.get_or_create(course=course, student=student)
+            student_ids = sorted(student.pk for student in students)
+            enrolled_ids = set(
+                Enrollment.objects.filter(
+                    course=course, student_id__in=student_ids
+                ).values_list("student_id", flat=True)
+            )
+            Enrollment.objects.bulk_create(
+                [
+                    Enrollment(course=course, student_id=student_id)
+                    for student_id in student_ids
+                    if student_id not in enrolled_ids
+                ],
+                batch_size=BULK_BATCH_SIZE,
+            )
     except IntegrityError as exc:
         # A concurrent create/delete may commit after preflight. The atomic block
         # has rolled back before this public, non-database error is returned.

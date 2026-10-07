@@ -4,7 +4,8 @@ from io import StringIO
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import connection, transaction
+from django.db.models.deletion import ProtectedError
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
@@ -12,6 +13,7 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from assessments.models import Assessment
 from courses.models import Course
+from students.lifecycle import withdraw_enrollment
 from students.models import Enrollment, Student
 from submissions.jobs import finish_job
 from submissions.models import RecognitionJob, Submission
@@ -77,7 +79,7 @@ class IntegrityReviewTests(TestCase):
         with self.assertRaises(ValidationError):
             self.enrollment.save()
 
-    def test_audit_snapshot_survives_contact_edits_and_enrollment_deletion(self):
+    def test_audit_snapshot_survives_contact_edits_and_enrollment_withdrawal(self):
         audit = self.submission.record_status_change(
             self.user, "verified", new_enrollment=self.enrollment
         )
@@ -85,10 +87,21 @@ class IntegrityReviewTests(TestCase):
         self.assertEqual(identity["student_number"], "00123456")
         self.student.student_number = "00999999"
         self.student.save()
-        self.enrollment.delete()
+        with self.assertRaises(ProtectedError), transaction.atomic():
+            self.enrollment.delete()
+        withdrawn = withdraw_enrollment(
+            self.enrollment.pk, self.user, self.enrollment.version, "Student withdrew"
+        )
         audit.refresh_from_db()
-        self.assertIsNone(audit.new_enrollment_id)
+        self.assertEqual(audit.new_enrollment_id, self.enrollment.pk)
         self.assertEqual(audit.new_identity, identity)
+        self.assertIsNotNone(withdrawn.withdrawn_at)
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.enrollment_id, self.enrollment.pk)
+        self.assertEqual(self.submission.status, "verified")
+        self.assertFalse(
+            Submission.objects.active().filter(pk=self.submission.pk).exists()
+        )
 
     def test_existing_audit_identity_cannot_be_rewritten(self):
         audit = self.submission.record_status_change(

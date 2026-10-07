@@ -72,6 +72,7 @@ def claim_next_job():
             .filter(
                 status=RecognitionJob.Status.QUEUED,
                 run_after__lte=now,
+                submission__in=Submission.objects.active(),
                 submission__assessment__archived_at__isnull=True,
                 submission__assessment__course__archived_at__isnull=True,
             )
@@ -192,7 +193,8 @@ def _transition_processing(job, new_status, *, enrollment=None, reason):
         if enrollment is not None:
             # Lock submission before enrollment, matching deletion's FK-clear order.
             enrollment = (
-                Enrollment.objects.select_related("student")
+                Enrollment.objects.active()
+                .select_related("student")
                 .select_for_update(of=("self",))
                 .filter(
                     pk=enrollment.pk,
