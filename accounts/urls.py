@@ -4,12 +4,20 @@ from .views import (
     CurrentUserView,
     LoginView,
     LogoutView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
     RefreshView,
     RegisterView,
     RegistrationPolicyView,
 )
 
 urlpatterns = [
+    path("password-reset/", PasswordResetRequestView.as_view(), name="password_reset"),
+    path(
+        "password-reset/confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
     path("register/", RegisterView.as_view(), name="register"),
     path(
         "registration-policy/",

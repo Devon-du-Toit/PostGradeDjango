@@ -52,9 +52,7 @@ Legend: **✓** allowed · **own** only objects the user owns (others → 404) �
 The Marker and Admin columns are identical to Lecturer on purpose: that is
 the current behaviour, written down so nobody assumes otherwise.
 
-**Delegated course access** (a marker working on a lecturer's course) is
-**not supported**. It needs a course-membership model and changes to every
-owner filter, so it is a follow-up [#46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46). Existing role labels retain owner-only capabilities until approved rules exist. Numeric marking and gradebooks were removed; marker is currently a legacy account label.
+**Delegated course access** is not supported. On 7 October 2026 the repository owner approved keeping owner-only API access for every role, separate Django staff administration, and no course delegation ([decision #46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46)). ADMIN, LECTURER and MARKER labels grant no cross-owner API privileges. Numeric marking and gradebooks were removed; marker remains a legacy account label. Any future delegation requires a new approved policy.
 
 ## Regression evidence
 
@@ -73,7 +71,7 @@ owner filter, so it is a follow-up [#46](https://github.com/Devon-du-Toit/PostGr
 | Expiry | Access: 5 minutes. Refresh: 1 day from issuance or last rotation. Rotation renews refresh expiry; no absolute session-duration cap is introduced. | SIMPLE_JWT |
 | Rotation | Refresh returns both access and refresh; old refresh is blacklisted. User row locking serializes concurrent refreshes so only one consumes the token. Vue persists the new pair and coordinates one refresh per tab. | ROTATE_REFRESH_TOKENS / BLACKLIST_AFTER_ROTATION |
 | Logout | POST auth/logout/ with {"refresh": "..."} blacklists that refresh without requiring a live access token. Vue clears local state immediately and revokes a late rotated response after logout. Previously issued access tokens can remain valid for their remaining 5 minutes. An offline logout cannot guarantee server revocation; Vue reports uncertainty. | Blacklist app + logout route |
-| Password reset/deactivation | Trusted staff use Django admin. Password changes invalidate access and refresh tokens; disabled/deleted accounts cannot use existing sessions. There is no public recovery route yet. | CHECK_REVOKE_TOKEN / is_active |
+| Password reset/deactivation | Trusted staff can use Django admin. Optional self-service recovery uses queued, expiring single-use reset links and configured trusted frontend URLs; production defaults closed. Password changes invalidate access and refresh tokens; disabled/deleted accounts cannot use existing sessions. | CHECK_REVOKE_TOKEN / is_active / [recovery guide](PASSWORD_RECOVERY.md) |
 | Browser persistence | Both tokens remain in localStorage for compatibility. This is readable by page scripts and is not an HttpOnly session. Cookie storage and cross-tab coordination require a separate deployment decision. | Vue follow-up #36 |
 
 Register/login/refresh/logout/policy ignore stale bearer headers; domain routes still authenticate access tokens. A refresh token proves possession of one session, not delegated access to another course. Logout does not revoke every device's session. Administrative password resets and deactivation apply to all devices.
@@ -90,8 +88,8 @@ The Vue update coordinates with [Vue #5](https://github.com/Devon-du-Toit/PostGr
 
 ## Bounded follow-ups and review
 
-- [Backend #46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46): approved role restrictions, delegated membership and administrative cross-owner API policy.
-- [Backend #47](https://github.com/Devon-du-Toit/PostGradeDjango/issues/47): decide self-service recovery and implement single-use reset emails after provider/frontend URL decisions.
+- [Backend #46](https://github.com/Devon-du-Toit/PostGradeDjango/issues/46) is resolved: the owner-only role policy above is approved and covered by the role/endpoint matrix tests.
+- Self-service recovery is implemented; enable only after approving frontend URL, SMTP configuration and worker scheduling as described in [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md).
 - [Vue #36](https://github.com/Devon-du-Toit/PostGradeVue/issues/36): decide HttpOnly refresh cookies, CORS/CSRF policy and coordination across tabs.
 
 Issue #8 also requests a final human review by lSiphonl. Implementation/tests do not constitute that approval; it remains a review step before closing the issue.
