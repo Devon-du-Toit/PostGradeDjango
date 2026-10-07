@@ -291,7 +291,7 @@ class ListQueryCountTests(ListAPITestData, TestCase):
     """Each list costs the same number of queries at any size.
 
     count + page (+ owner lookup for nested lists)
-    (+ 2 recognition prefetches for submissions).
+    (+ 2 recognition prefetches and 1 QR-page prefetch for submissions).
     """
 
     def endpoints(self):
@@ -301,8 +301,8 @@ class ListQueryCountTests(ListAPITestData, TestCase):
             "/api/enrollments/": 2,
             f"/api/courses/{self.course.id}/students/": 3,
             f"/api/courses/{self.course.id}/assessments/": 3,
-            "/api/submissions/": 4,
-            "/api/submissions/verification-queue/": 4,
+            "/api/submissions/": 5,
+            "/api/submissions/verification-queue/": 5,
         }
 
     def add_rows(self, start, count):

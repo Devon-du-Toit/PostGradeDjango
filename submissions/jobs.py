@@ -105,9 +105,12 @@ def run_job(job, claimed_attempt):
         cancel_active_jobs(job.submission)
         return
     try:
-        result = recognize_submission(
-            job.submission,
+        context = (
+            {"job_id": job.pk, "claimed_attempt": claimed_attempt}
+            if job.submission.qr_group_key
+            else {}
         )
+        result = recognize_submission(job.submission, **context)
     except Exception as exc:
         logger.exception(
             "Recognition job %s failed on attempt %s",

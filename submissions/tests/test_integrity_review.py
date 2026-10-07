@@ -162,4 +162,4 @@ class IntegrityReviewTests(TestCase):
                     response = client.get(path, {"page_size": page_size})
                 self.assertEqual(response.status_code, 200)
                 counts.append(len(queries))
-            self.assertEqual(counts, [4, 4, 4])
+            self.assertEqual(counts, [5, 5, 5])

@@ -16,6 +16,10 @@ from submissions.signals import delete_file_after_commit
 
 
 def create_submission(validated_data, actor):
+    if validated_data["assessment"].expected_qr_page_labels:
+        from submissions.qr import create_qr_submissions
+
+        return create_qr_submissions(validated_data, actor)
     validated_data = dict(validated_data)
     validated_data.pop("version", None)
     validated_data["enrollment"] = None
@@ -43,6 +47,10 @@ def create_submission(validated_data, actor):
 
 def replace_submission(instance, validated_data, actor):
 
+    if instance.qr_group_key:
+        raise ValidationError(
+            "Upload additional QR pages through the assessment upload endpoint; use page review to correct grouping."
+        )
     validated_data = dict(validated_data)
     incoming_version = validated_data.get("version")
     if incoming_version is None:

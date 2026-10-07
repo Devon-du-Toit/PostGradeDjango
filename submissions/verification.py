@@ -24,6 +24,23 @@ def verify_submission(
             .select_for_update(of=("self",)),
             pk=submission.pk,
         )
+        if locked.qr_group_key:
+            from submissions.qr import group_issues
+
+            issues = group_issues(locked)
+            if issues:
+                raise ValidationError(
+                    "Resolve QR page review before verifying: " + ", ".join(issues)
+                )
+            suggestions = set(
+                locked.pages.filter(excluded=False)
+                .exclude(suggested_enrollment=None)
+                .values_list("suggested_enrollment_id", flat=True)
+            )
+            if suggestions and enrollment.pk not in suggestions and not reason.strip():
+                raise ValidationError(
+                    "A conflicting student requires an explicit review reason."
+                )
         if enrollment.course_id != locked.assessment.course_id:
             raise ValidationError(
                 "Enrollment does not belong to the submission's course."
@@ -53,12 +70,16 @@ def verify_submission(
             locked.record_status_change(
                 actor=actor,
                 new_status=Submission.Status.VERIFIED,
-                reason=reason.strip() if correction else "Verified against enrollment",
+                reason=reason.strip() or "Verified against enrollment",
                 new_enrollment=enrollment,
                 expected_version=expected_version,
             )
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
+        if locked.qr_group_key:
+            locked.pages.filter(excluded=False).update(
+                linked_enrollment=locked.enrollment
+            )
         supersede_submission_emails(locked)
     submission.refresh_from_db()
     return submission

@@ -49,3 +49,5 @@ Auth lifecycle and endpoint matrix regressions live in `accounts.test_lifecycle`
 
 
 Database review regressions: submissions.tests.test_integrity_review runs in the fast unit job and covers membership validation, deletion fencing, immutable audit identity and constant list query counts. Full integration includes migration coverage. tools/database_review.py is a separate guarded PostgreSQL/media drill, not a production seed or CI mail sender.
+
+Pull requests targeting any branch run CI, including stacked feature PRs. Push-triggered CI remains limited to main/master. Test settings and fixture data are synthetic; this does not expose production credentials.

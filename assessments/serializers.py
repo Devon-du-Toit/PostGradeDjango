@@ -22,6 +22,8 @@ class AssessmentSerializer(serializers.ModelSerializer):
             "course",
             "name",
             "date",
+            "expected_qr_page_labels",
+            "qr_test",
             "created_at",
             "updated_at",
         ]
@@ -31,6 +33,20 @@ class AssessmentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate_expected_qr_page_labels(self, value):
+        from submissions.qr import label_order
+
+        if not isinstance(value, list) or len(value) > 20:
+            raise serializers.ValidationError("Use a list of at most 20 page labels.")
+        if any(not isinstance(label, str) for label in value):
+            raise serializers.ValidationError("Page labels must be strings such as P1.")
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Page labels must be unique.")
+        try:
+            return sorted(value, key=label_order)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("Use labels such as P1 and P3.")
 
     def create(self, validated_data):
         with transaction.atomic():
@@ -51,4 +67,11 @@ class AssessmentSerializer(serializers.ModelSerializer):
                 pk=instance.pk,
                 course_id=instance.course_id,
             )
+            if current.submissions.filter(qr_group_key__gt="").exists() and any(
+                key in validated_data and validated_data[key] != getattr(current, key)
+                for key in ("expected_qr_page_labels", "qr_test", "date")
+            ):
+                raise serializers.ValidationError(
+                    "QR configuration cannot change after QR intake."
+                )
             return super().update(current, validated_data)

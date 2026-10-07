@@ -83,6 +83,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
             course__archived_at__isnull=True,
         )
 
+    grouped_pages = serializers.SerializerMethodField()
+    upload_group_ids = serializers.SerializerMethodField()
+    qr_group_status = serializers.SerializerMethodField()
     recognition = serializers.SerializerMethodField()
     recognition_job = serializers.SerializerMethodField()
     # "file" is accepted on upload but never rendered back out (see
@@ -96,6 +99,11 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "id",
             "assessment",
             "recognition_method",
+            "qr_metadata",
+            "qr_review_issues",
+            "qr_group_status",
+            "grouped_pages",
+            "upload_group_ids",
             "enrollment",
             "file",
             "download_url",
@@ -110,6 +118,8 @@ class SubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "original_filename",
+            "qr_metadata",
+            "qr_review_issues",
             "status",
             "created_at",
             "updated_at",
@@ -117,6 +127,59 @@ class SubmissionSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "file": {"write_only": True},
         }
+
+    def get_upload_group_ids(self, submission):
+        return getattr(submission, "upload_group_ids", [submission.pk])
+
+    def get_qr_group_status(self, submission):
+        if not submission.qr_group_key:
+            return None
+        from submissions.qr import group_issues
+
+        return (
+            "manual_review"
+            if group_issues(submission)
+            else (
+                "linked"
+                if submission.status == "verified" and submission.enrollment_id
+                else "pending_identification"
+            )
+        )
+
+    def get_grouped_pages(self, submission):
+        if not submission.qr_group_key:
+            return []
+        from submissions.qr import label_order
+
+        return [
+            dict(
+                id=page.pk,
+                qr_fields=page.qr_fields,
+                qr_status=page.qr_status,
+                excluded=page.excluded,
+                review_history=page.review_history,
+                page_label=page.page_label,
+                source_page=page.source_page,
+                recognition_outcome=page.recognition_outcome,
+                quality_issues=page.quality_issues,
+                suggested_enrollment=page.suggested_enrollment_id,
+                linked_enrollment=page.linked_enrollment_id,
+                download_url=reverse(
+                    "submission-page-file", args=[submission.pk, page.pk]
+                ),
+                upload_id=page.upload_id,
+                source_download_url=reverse(
+                    "submission-upload-file", args=[submission.pk, page.upload_id]
+                ),
+            )
+            for page in sorted(
+                submission.pages.all(),
+                key=lambda page: (
+                    label_order(page.page_label) if page.page_label else 10000,
+                    page.pk,
+                ),
+            )
+        ]
 
     def get_download_url(self, submission):
         if not submission.file:

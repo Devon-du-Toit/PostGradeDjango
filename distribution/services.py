@@ -75,6 +75,13 @@ def schedule_script_email(submission):
                 raise ValidationError(
                     "The verified student must belong to the assessment's course."
                 )
+            if submission.qr_group_key:
+                from submissions.qr import group_issues
+
+                if group_issues(submission):
+                    raise ValidationError(
+                        "Resolve QR page review before emailing the script."
+                    )
             key = f"submission-{submission.pk}-v{submission.version}"
             existing = ScriptEmail.objects.filter(idempotency_key=key).first()
             if existing is not None:

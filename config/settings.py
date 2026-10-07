@@ -309,3 +309,6 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "CHECK_REVOKE_TOKEN": True,
 }
+
+# Includes excluded duplicates, bounding cumulative group rebuild cost.
+MAX_QR_GROUP_PAGES = int(os.getenv("MAX_QR_GROUP_PAGES", "100"))
