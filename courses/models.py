@@ -13,7 +13,7 @@ class Course(models.Model):
     objects = CourseQuerySet.as_manager()
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,  # points to the custom email-based user model
-        on_delete=models.CASCADE,  # deleting user also deletes courses
+        on_delete=models.PROTECT,  # deleting user also deletes courses
         related_name="courses",
     )
     code = models.CharField(max_length=50)

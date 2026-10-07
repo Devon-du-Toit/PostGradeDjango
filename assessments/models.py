@@ -13,7 +13,7 @@ class Assessment(models.Model):
     objects = AssessmentQuerySet.as_manager()
     course = models.ForeignKey(
         Course,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="assessments",
     )
     name = models.CharField(max_length=255)

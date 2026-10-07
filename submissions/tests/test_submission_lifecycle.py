@@ -1,12 +1,11 @@
 """
-Covers acceptance criterion: replacement/deletion cleanup,
+Covers acceptance criterion: replacement/archive,
 retention, and storage-backend behaviour for submission files.
 
-- Deleting a submission (directly, or via cascade from its parent
-  Assessment/Course) removes the underlying file from storage - no
-  orphaned files are left behind.
-- A submission's file cannot be swapped out after upload; the
-  supported path is delete-and-reupload.
+- Archiving a submission retains the row, file and audited history;
+  referenced assessments cannot be hard-deleted.
+- Replacing a submission retains the previous file revision and
+  invalidates its prior match.
 - Recognition no longer assumes a local filesystem path
   (submission.file.path); it stages the file through the Storage
   API instead, so it keeps working on non-filesystem backends.
@@ -20,6 +19,7 @@ from unittest.mock import PropertyMock, patch
 
 import pymupdf
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db.models.deletion import ProtectedError
 from django.test import TestCase, override_settings
 from PIL import Image, ImageDraw
 from rest_framework import status
@@ -103,36 +103,49 @@ class SubmissionDeletionCleanupTests(TestCase):
             original_filename="paper.pdf",
         )
 
-    def test_deleting_submission_removes_file_from_storage(self):
+    def test_archiving_submission_retains_file_and_audited_history(self):
         submission = self._make_submission()
         file_path = Path(submission.file.path)
         self.assertTrue(file_path.exists())
 
         self.client.force_authenticate(user=self.user)
-        # Files are removed once the delete commits.
+        # DELETE is an explicit versioned archive, preserving original bytes.
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.delete(f"/api/submissions/{submission.id}/")
+            response = self.client.delete(
+                f"/api/submissions/{submission.id}/",
+                {"version": submission.version, "reason": "Superseded scan"},
+                format="json",
+            )
 
         self.assertEqual(
             response.status_code,
             status.HTTP_204_NO_CONTENT,
         )
-        self.assertFalse(Submission.objects.filter(pk=submission.id).exists())
-        self.assertFalse(file_path.exists())
+        self.assertTrue(Submission.objects.filter(pk=submission.id).exists())
+        self.assertTrue(file_path.exists())
+        submission.refresh_from_db()
+        self.assertIsNotNone(submission.archived_at)
+        self.assertFalse(Submission.objects.active().filter(pk=submission.pk).exists())
+        self.assertEqual(
+            submission.file_revisions.get().file.name, submission.file.name
+        )
+        audit = submission.audit_entries.get()
+        self.assertEqual(audit.actor_id, self.user.pk)
+        self.assertIn("Superseded scan", audit.reason)
 
-    def test_deleting_assessment_cascades_and_removes_file(self):
+    def test_referenced_assessment_delete_is_protected_and_archive_retains_file(self):
         submission = self._make_submission()
         file_path = Path(submission.file.path)
         self.assertTrue(file_path.exists())
 
-        # No API endpoint deletes an Assessment directly here, so
-        # this exercises the model-level cascade the signal has to
-        # survive. Files are removed once the delete commits.
-        with self.captureOnCommitCallbacks(execute=True):
+        with self.assertRaises(ProtectedError):
             self.assessment.delete()
+        self.assessment.archive()
 
-        self.assertFalse(Submission.objects.filter(pk=submission.id).exists())
-        self.assertFalse(file_path.exists())
+        self.assertTrue(Submission.objects.filter(pk=submission.id).exists())
+        self.assertTrue(file_path.exists())
+        self.assertTrue(Assessment.objects.filter(pk=self.assessment.pk).exists())
+        self.assertFalse(Submission.objects.active().filter(pk=submission.pk).exists())
 
     def test_other_user_cannot_delete_submission(self):
         submission = self._make_submission()
@@ -145,6 +158,8 @@ class SubmissionDeletionCleanupTests(TestCase):
             response.status_code,
             status.HTTP_404_NOT_FOUND,
         )
+        history = self.client.get(f"/api/submissions/{submission.id}/history-file/")
+        self.assertEqual(history.status_code, status.HTTP_404_NOT_FOUND)
         self.assertTrue(Submission.objects.filter(pk=submission.id).exists())
         self.assertTrue(file_path.exists())
 
@@ -162,17 +177,48 @@ class SubmissionDeletionCleanupTests(TestCase):
         )
         self.assertTrue(Submission.objects.filter(pk=submission.id).exists())
 
-    def test_deleted_submission_file_is_no_longer_downloadable(self):
+    def test_archived_submission_retains_owner_protected_downloads(self):
         submission = self._make_submission()
         self.client.force_authenticate(user=self.user)
 
-        self.client.delete(f"/api/submissions/{submission.id}/")
+        archived = self.client.delete(
+            f"/api/submissions/{submission.id}/",
+            {"version": submission.version, "reason": "Remove from active review"},
+            format="json",
+        )
+        self.assertEqual(archived.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(submission.file.storage.exists(submission.file.name))
 
         response = self.client.get(f"/api/submissions/{submission.id}/file/")
 
         self.assertEqual(
             response.status_code,
-            status.HTTP_404_NOT_FOUND,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(b"".join(response.streaming_content), b"fake pdf content")
+        history = self.client.get(f"/api/submissions/{submission.id}/history-file/")
+        self.assertEqual(history.status_code, status.HTTP_200_OK)
+        self.assertEqual(b"".join(history.streaming_content), b"fake pdf content")
+        self.client.force_authenticate(user=self.other_user)
+        self.assertEqual(
+            self.client.get(f"/api/submissions/{submission.id}/file/").status_code, 404
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/submissions/{submission.id}/history-file/"
+            ).status_code,
+            404,
+        )
+        self.client.force_authenticate(user=self.user)
+        self.assessment.archive()
+        self.assertEqual(
+            self.client.get(f"/api/submissions/{submission.id}/file/").status_code, 404
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/submissions/{submission.id}/history-file/"
+            ).status_code,
+            404,
         )
 
 
@@ -227,7 +273,7 @@ class SubmissionFileReplacementTests(TestCase):
             content_type="application/pdf",
         )
 
-        # The old file is removed once the replacement commits.
+        # Both versions remain available as retained evidence after commit.
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.patch(
                 f"/api/submissions/{self.submission.id}/",
@@ -242,13 +288,16 @@ class SubmissionFileReplacementTests(TestCase):
 
         self.submission.refresh_from_db()
 
-        # New file saved, old one cleaned up.
+        # New file saved; old bytes have a revision record.
         self.assertNotEqual(
             self.submission.file.name,
             old_name,
         )
         self.assertTrue(self.submission.file.storage.exists(self.submission.file.name))
-        self.assertFalse(old_storage.exists(old_name))
+        self.assertTrue(old_storage.exists(old_name))
+        revision = self.submission.file_revisions.get()
+        self.assertEqual(revision.file.name, old_name)
+        self.assertEqual(revision.original_filename, "paper.pdf")
 
         # A new file invalidates any prior match.
         self.assertIsNone(self.submission.enrollment)

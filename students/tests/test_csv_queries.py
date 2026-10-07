@@ -39,16 +39,16 @@ class CSVQueryBudgetTests(TestCase):
     def test_repeat_import_is_constant_and_does_not_duplicate_memberships(self):
         apply_import_plan(self.user, self.course, self.plan())
         plan = self.plan()
-        with self.assertNumQueries(5):
+        with self.assertNumQueries(6):
             apply_import_plan(self.user, self.course, plan)
         self.assertEqual(Enrollment.objects.count(), 300)
 
-    def test_300_contact_updates_use_six_queries_and_preserve_timestamps(self):
+    def test_300_contact_updates_use_seven_queries_and_preserve_timestamps(self):
         apply_import_plan(self.user, self.course, self.plan())
         original = Student.objects.get(student_number="00000000")
         Student.objects.filter(owner=self.user).update(first_name="Before")
         plan = self.plan(update_existing=True)
-        with self.assertNumQueries(6):
+        with self.assertNumQueries(7):
             apply_import_plan(self.user, self.course, plan)
         original.refresh_from_db()
         self.assertEqual(original.first_name, "First")

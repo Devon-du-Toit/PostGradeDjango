@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db.models import Prefetch
 from django.http import FileResponse, Http404
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -20,6 +21,15 @@ from submissions.serializers import (
     SubmissionTransitionSerializer,
 )
 from submissions.verification import verify_submission
+
+
+def protected_file_response(*args, **kwargs):
+    from django.utils.cache import patch_vary_headers
+
+    response = FileResponse(*args, **kwargs)
+    response["Cache-Control"] = "private, no-store"
+    patch_vary_headers(response, ["Authorization"])
+    return response
 
 
 class RecognitionMethodsView(APIView):
@@ -49,7 +59,7 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
             .filter(
                 assessment__course__owner=self.request.user,
             )
-            .select_related("assessment")
+            .select_related("assessment", "enrollment__student")
             .prefetch_related(
                 "recognition_attempts",
                 "recognition_jobs",
@@ -63,6 +73,18 @@ class SubmissionListCreateView(generics.ListCreateAPIView):
 
 
 class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError as APIValidationError
+
+        from students.serializers import lifecycle_action
+        from submissions.retention import archive_submission
+
+        version, reason = lifecycle_action(self.request.data)
+        try:
+            archive_submission(instance, self.request.user, version, reason)
+        except ValidationError as exc:
+            raise APIValidationError(exc.messages) from exc
+
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated]
 
@@ -72,7 +94,7 @@ class SubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
             .filter(
                 assessment__course__owner=self.request.user,
             )
-            .select_related("assessment")
+            .select_related("assessment", "enrollment__student")
             .prefetch_related(
                 "recognition_attempts",
                 "recognition_jobs",
@@ -98,7 +120,7 @@ class SubmissionVerifyView(generics.GenericAPIView):
         enrollment_id = payload.validated_data["enrollment"]
 
         enrollment = generics.get_object_or_404(
-            Enrollment.objects.filter(
+            Enrollment.objects.active().filter(
                 course__owner=request.user,
             ),
             pk=enrollment_id,
@@ -149,7 +171,7 @@ class SubmissionVerificationQueueView(generics.ListAPIView):
                 assessment__course__owner=self.request.user,
                 status__in=VERIFICATION_QUEUE_STATUSES,
             )
-            .select_related("assessment")
+            .select_related("assessment", "enrollment__student")
             .prefetch_related(
                 "recognition_attempts",
                 "recognition_jobs",
@@ -175,7 +197,7 @@ class SubmissionRecognitionImageView(generics.GenericAPIView):
         if attempt is None or not attempt.region_image:
             raise Http404("No recognition image for this submission.")
 
-        return FileResponse(
+        return protected_file_response(
             attempt.region_image.open("rb"),
             content_type="image/png",
         )
@@ -235,8 +257,10 @@ class SubmissionFileDownloadView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Submission.objects.active().filter(
+        return Submission.objects.filter(
             assessment__course__owner=self.request.user,
+            assessment__archived_at__isnull=True,
+            assessment__course__archived_at__isnull=True,
         )
 
     def get(self, request, pk):
@@ -253,7 +277,7 @@ class SubmissionFileDownloadView(generics.GenericAPIView):
         except (FileNotFoundError, OSError):
             raise Http404
 
-        return FileResponse(
+        return protected_file_response(
             file_handle,
             as_attachment=True,
             filename=(submission.original_filename or submission.file.name),
@@ -268,15 +292,19 @@ class ScriptPageFileView(generics.GenericAPIView):
 
         page = generics.get_object_or_404(
             ScriptPage.objects.filter(
-                submission__in=Submission.objects.active().filter(
-                    assessment__course__owner=request.user
+                submission__in=Submission.objects.filter(
+                    assessment__archived_at__isnull=True,
+                    assessment__course__archived_at__isnull=True,
+                    assessment__course__owner=request.user,
                 )
             ),
             submission_id=pk,
             pk=page_id,
         )
         try:
-            return FileResponse(page.file.open("rb"), content_type="application/pdf")
+            return protected_file_response(
+                page.file.open("rb"), content_type="application/pdf"
+            )
         except OSError:
             raise Http404
 
@@ -306,7 +334,10 @@ class ScriptUploadFileView(generics.GenericAPIView):
 
         upload = generics.get_object_or_404(
             ScriptUpload.objects.filter(
-                assessment__in=Submission.objects.active()
+                assessment__in=Submission.objects.filter(
+                    assessment__archived_at__isnull=True,
+                    assessment__course__archived_at__isnull=True,
+                )
                 .filter(pk=pk, assessment__course__owner=request.user)
                 .values("assessment_id"),
                 pages__submission_id=pk,
@@ -314,11 +345,78 @@ class ScriptUploadFileView(generics.GenericAPIView):
             pk=upload_id,
         )
         try:
-            return FileResponse(
+            return protected_file_response(
                 upload.file.open("rb"),
                 as_attachment=True,
                 filename="source-upload"
                 + upload.file.name[upload.file.name.rfind(".") :],
+            )
+        except OSError:
+            raise Http404
+
+
+class SubmissionHistoryView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    filterset_class = SubmissionFilter
+
+    def get_serializer_class(self):
+        from submissions.serializers import SubmissionHistorySerializer
+
+        return SubmissionHistorySerializer
+
+    def get_queryset(self):
+        from submissions.models import SubmissionAudit
+
+        return (
+            Submission.objects.filter(
+                assessment__course__owner=self.request.user,
+                assessment__archived_at__isnull=True,
+                assessment__course__archived_at__isnull=True,
+            )
+            .select_related("assessment", "enrollment__student")
+            .prefetch_related(
+                "recognition_attempts",
+                "recognition_jobs",
+                "pages",
+                "file_revisions",
+                Prefetch(
+                    "audit_entries",
+                    queryset=SubmissionAudit.objects.select_related("actor"),
+                ),
+            )
+            .order_by("-created_at", "-pk")
+        )
+
+
+class SubmissionHistoryFileView(SubmissionFileDownloadView):
+    def get_queryset(self):
+        return Submission.objects.filter(
+            assessment__course__owner=self.request.user,
+            assessment__archived_at__isnull=True,
+            assessment__course__archived_at__isnull=True,
+        )
+
+
+class SubmissionRevisionFileView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, revision_id):
+        from submissions.models import SubmissionFileRevision
+
+        revision = generics.get_object_or_404(
+            SubmissionFileRevision.objects.filter(
+                submission__assessment__course__owner=request.user,
+                submission__assessment__archived_at__isnull=True,
+                submission__assessment__course__archived_at__isnull=True,
+            ),
+            pk=revision_id,
+            submission_id=pk,
+        )
+        try:
+            return protected_file_response(
+                revision.file.open("rb"),
+                as_attachment=True,
+                filename=revision.original_filename,
             )
         except OSError:
             raise Http404

@@ -206,6 +206,7 @@ master yet.
 | [`DOCS/RECOGNITION_WORKER.md`](DOCS/RECOGNITION_WORKER.md) | Recognition worker setup and troubleshooting |
 | [`DOCS/SCRIPT_EMAIL_DELIVERY.md`](DOCS/SCRIPT_EMAIL_DELIVERY.md) | Verified script email delivery |
 | [`DOCS/BACKUP_RESTORE.md`](DOCS/BACKUP_RESTORE.md) | Database backup and recovery |
+| [`DOCS/DATABASE_MEMBERSHIP_CONSTRAINTS.md`](DOCS/DATABASE_MEMBERSHIP_CONSTRAINTS.md) | PostgreSQL bulk/SQL membership enforcement and fail-closed migration |
 | [`DOCS/API_CONTRACT.md`](DOCS/API_CONTRACT.md) | Pagination, filters, types and dashboard semantics |
 | [`DOCS/PERMISSIONS.md`](DOCS/PERMISSIONS.md) | Release auth matrix, signup/throttling and account follow-ups |
 | [`DOCS/ARCHIVING.md`](DOCS/ARCHIVING.md) | Release archive policy, retained files and worker behavior |
@@ -241,3 +242,6 @@ Bubble recognition and method selection: [guide](DOCS/BUBBLE_RECOGNITION.md). Af
 Install the pinned tools with `python -m pip install -r requirements-dev.txt`, then run `python -m ruff check .` and `python -m black --workers 1 --check .`. CI enforces both check-only commands before PostgreSQL tests. See [backend structure](DOCS/BACKEND_STRUCTURE.md) for the upload/replacement services, shared course lock and recognition dependency review. Runtime recognition dependencies and API contracts are preserved; no migration is introduced by this refactor.
 
 QR multipage intake and audited grouping review: [QR script grouping](DOCS/QR_SCRIPT_GROUPING.md).
+
+Current-script replacement, private history and class withdrawal are documented
+in [SCRIPT_HISTORY_AND_WITHDRAWAL.md](DOCS/SCRIPT_HISTORY_AND_WITHDRAWAL.md).

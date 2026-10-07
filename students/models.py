@@ -3,10 +3,19 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 
 
+class StudentQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(archived_at__isnull=True)
+
+
 class Student(models.Model):
+    objects = StudentQuerySet.as_manager()
+    archived_at = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=0)
+
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="students",
     )
     student_number = models.CharField(max_length=50)
@@ -45,15 +54,29 @@ class Student(models.Model):
         return f"{self.student_number} - {self.first_name} {self.last_name}"
 
 
+class EnrollmentQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(
+            withdrawn_at__isnull=True,
+            student__archived_at__isnull=True,
+            course__archived_at__isnull=True,
+        )
+
+
 class Enrollment(models.Model):
+    objects = EnrollmentQuerySet.as_manager()
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    withdrawal_reason = models.TextField(blank=True)
+    version = models.PositiveIntegerField(default=0)
+
     course = models.ForeignKey(
         "courses.Course",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="enrollments",
     )
     student = models.ForeignKey(
         Student,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="enrollments",
     )
 
@@ -78,6 +101,10 @@ class Enrollment(models.Model):
             self.course = Course.objects.select_for_update().get(pk=self.course_id)
             self.student = Student.objects.select_for_update().get(pk=self.student_id)
             self.clean()
+            if not self.pk and (self.student.archived_at or self.course.archived_at):
+                raise ValidationError(
+                    "Restore archived contacts/courses before enrolling."
+                )
             if self.pk:
                 previous = (
                     Enrollment.objects.select_for_update().filter(pk=self.pk).first()
