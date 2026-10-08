@@ -118,6 +118,7 @@ DATABASES = {
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "accounts.password_validation.SpecialCharacterValidator"},
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
