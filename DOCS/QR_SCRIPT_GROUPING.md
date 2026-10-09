@@ -11,6 +11,10 @@ POST the existing authenticated `/api/submissions/` upload with assessment,
 file and recognition_method (`ocr` or `bubble`). All PDF/image pages are inspected.
 The five QR fields are module, YYYYMMDD date, test, P label and # test number.
 The grouping key excludes the page label. QR never supplies student identity.
+ZXing and OpenCV decode printed page codes. ZXing handles small vector modules
+and nearby rules that can distort OpenCV detection. Both readers contribute
+values; different payloads on a page still require conflicting-QR review. A page
+without a printed code remains unreadable; intake never invents missing metadata.
 One mixed upload can produce several submissions; the response retains the
 normal submission shape and additionally returns `upload_group_ids`. Fetch each
 ID through the existing detail endpoint or assessment-filtered list. Repeated

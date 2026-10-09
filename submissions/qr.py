@@ -8,6 +8,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 import pymupdf
+import zxingcpp
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
@@ -51,7 +52,18 @@ def parse_qr(value):
 
 def decode_page(image):
     detector = cv2.QRCodeDetector()
-    values = set()
+    # Tiny vector modules and rules touching the quiet zone can distort
+    # OpenCV's detected corners. ZXing reads those codes without guessing
+    # fields from filenames or student numbers. Keep every decoded value
+    # from both readers so conflicting codes still require review.
+    values = {
+        barcode.text
+        for barcode in zxingcpp.read_barcodes(
+            cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),
+            formats=zxingcpp.BarcodeFormat.QRCode,
+        )
+        if barcode.text
+    }
     crops = [image, cv2.resize(image, None, fx=0.5, fy=0.5)]
     height, width = image.shape[:2]
     # Small printed codes may be detected but not decoded on a full A4/A3
